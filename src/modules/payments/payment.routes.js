@@ -1,13 +1,17 @@
- 
 import express from "express";
+
+// Authentication and role authorization
 import { verifyToken } from "../../middlewares/verifyToken.js";
 import { authorizeRole } from "../../middlewares/authorizeRole.js";
-import { createCheckoutSessionController } from "./payment.controller.js";
 
-// Initialize the payment router
+// Import both payment controllers only once
+import {
+  createCheckoutSessionController,
+  getPaymentHistoryController,
+} from "./payment.controller.js";
+
 const router = express.Router();
 
-// Customer creates a Stripe Checkout Session for an approved booking
 // Get payment history for customers, owners and admins
 router.get(
   "/history",
@@ -15,6 +19,8 @@ router.get(
   authorizeRole("customer", "owner", "admin"),
   getPaymentHistoryController
 );
+
+// Create Stripe Checkout Session for an approved booking
 router.post(
   "/checkout/:bookingId",
   verifyToken,
@@ -22,13 +28,4 @@ router.post(
   createCheckoutSessionController
 );
 
-// Import payment controllers
-import {
-  createCheckoutSessionController,
-  getPaymentHistoryController,
-} from "./payment.controller.js";
-
-
-
 export default router;
-
