@@ -16,6 +16,8 @@ import categoryRoutes from "./modules/categories/category.routes.js";
 import bookingRoutes from "./modules/booking/booking.routes.js";
 import paymentRoutes from "./modules/payments/payment.routes.js";
 import { stripeWebhookController } from "./modules/payments/payment.controller.js";
+// Expense management routes
+import expenseRoutes from "./modules/expenses/expense.routes.js";
 
 // Create the Express application before registering any routes
 const app = express();
@@ -67,15 +69,13 @@ app.post(
 app.use(express.json({ limit: "1mb" }));
 
 // ============================================
-// 5. APPLICATION ROUTES
-// ============================================
-
+// Application routes
 app.use("/api/categories", categoryRoutes);
 app.use("/api/equipment", equipmentRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/expenses", expenseRoutes);
 app.use("/api/test", testRoutes);
-
 // ============================================
 // 6. ROOT ROUTE
 // ============================================
