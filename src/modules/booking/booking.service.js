@@ -383,3 +383,61 @@ export const updateOwnerBookingStatus = async (
 
   return result;
 };
+
+/**
+ * Owner marks a completed rental
+ */
+export const completeBooking = async (bookingId, ownerId) => {
+  if (!ObjectId.isValid(bookingId)) {
+    throw new Error("Invalid booking ID");
+  }
+
+  const bookings = getDB().collection("bookings");
+  const bookingObjectId = new ObjectId(bookingId);
+
+  // Find booking belonging to this owner
+  const booking = await bookings.findOne({
+    _id: bookingObjectId,
+    ownerId,
+  });
+
+  if (!booking) {
+    throw new Error("Booking not found or access denied");
+  }
+
+  // Booking must be confirmed and paid
+  if (
+    booking.status !== "confirmed" ||
+    booking.paymentStatus !== "paid"
+  ) {
+    throw new Error("Only confirmed and paid bookings can be completed");
+  }
+
+  // Rental period must be finished
+  if (new Date(booking.endAt) > new Date()) {
+    throw new Error("Rental period has not ended yet");
+  }
+
+  // Update booking status
+  const result = await bookings.updateOne(
+    {
+      _id: bookingObjectId,
+      ownerId,
+      status: "confirmed",
+      paymentStatus: "paid",
+    },
+    {
+      $set: {
+        status: "completed",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    }
+  );
+
+  if (result.modifiedCount === 0) {
+    throw new Error("Booking could not be completed");
+  }
+
+  return bookings.findOne({ _id: bookingObjectId });
+};

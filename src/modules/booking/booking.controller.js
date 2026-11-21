@@ -1,6 +1,9 @@
 
 import { createBookingSchema } from "./booking.validation.js";
 import * as bookingService from "./booking.service.js";
+import {
+    completeBooking,
+} from "./booking.service.js";
 
 export const createBookingController = async (req, res, next) => {
   try {
@@ -244,5 +247,35 @@ export const updateOwnerBookingStatusController = async (
     });
   } catch (error) {
     return next(error);
+  }
+};
+
+/**
+ * Owner completes a rental booking
+ */
+export const completeBookingController = async (req, res) => {
+  try {
+    const booking = await completeBooking(
+      req.params.id,
+      req.user.id
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Booking completed successfully",
+      data: booking,
+    });
+  } catch (error) {
+    console.error("Complete booking error:", error);
+
+    const statusCode =
+      error.message === "Booking not found or access denied" ? 404 :
+      error.message === "Invalid booking ID" ? 400 :
+      409;
+
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || "Failed to complete booking",
+    });
   }
 };

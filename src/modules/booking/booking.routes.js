@@ -8,6 +8,9 @@ import express from "express";
 // Authentication and authorization middleware
 import { verifyToken } from "../../middlewares/verifyToken.js";
 import { authorizeRole } from "../../middlewares/authorizeRole.js";
+import {
+   completeBookingController,
+} from "./booking.controller.js";
 
 // Booking controllers
 import {
@@ -93,5 +96,12 @@ router.patch(
 // ============================================
 // 6. EXPORT ROUTER
 // ============================================
+// Owner: Complete a rental booking
+router.patch(
+  "/:id/complete",
+  verifyToken,
+  authorizeRole("owner"),
+  completeBookingController
+);
 
 export default router;
