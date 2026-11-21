@@ -8,6 +8,13 @@ import { createCheckoutSessionController } from "./payment.controller.js";
 const router = express.Router();
 
 // Customer creates a Stripe Checkout Session for an approved booking
+// Get payment history for customers, owners and admins
+router.get(
+  "/history",
+  verifyToken,
+  authorizeRole("customer", "owner", "admin"),
+  getPaymentHistoryController
+);
 router.post(
   "/checkout/:bookingId",
   verifyToken,
@@ -15,4 +22,13 @@ router.post(
   createCheckoutSessionController
 );
 
+// Import payment controllers
+import {
+  createCheckoutSessionController,
+  getPaymentHistoryController,
+} from "./payment.controller.js";
+
+
+
 export default router;
+
