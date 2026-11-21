@@ -9,47 +9,70 @@ import { toNodeHandler } from "better-auth/node";
 import { env } from "./config/env.js";
 import { getDB } from "./config/db.js";
 import { auth } from "./config/auth.js";
+
 import testRoutes from "./routes/test.routes.js";
 import equipmentRoutes from "./modules/equipment/equipment.routes.js";
 import categoryRoutes from "./modules/categories/category.routes.js";
 import bookingRoutes from "./modules/booking/booking.routes.js";
 
-
 const app = express();
 
-app.use("/api/categories", categoryRoutes);
+// ============================================
+// 1. SECURITY MIDDLEWARE
+// ============================================
 
-app.use("/api/bookings", bookingRoutes);
-// Equipment routes
-app.use("/api/equipment", equipmentRoutes);
-// Test routes
-app.use("/api/test", testRoutes);
-// Security middleware
 app.use(helmet());
 
-// CORS configuration
 app.use(
   cors({
     origin: env.clientUrl,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
-  }),
+  })
 );
-
-// Better Auth handler
-// IMPORTANT: Must be before express.json()
-app.all("/api/auth/*splat", toNodeHandler(auth));
-
-// Request body parser
-app.use(express.json({ limit: "1mb" }));
 
 // HTTP request logger
 if (env.nodeEnv === "development") {
   app.use(morgan("dev"));
 }
 
-// Root route
+// ============================================
+// 2. BETTER AUTH
+// ============================================
+
+// Better Auth handler must be before express.json()
+app.all("/api/auth/*splat", toNodeHandler(auth));
+
+// ============================================
+// 3. STRIPE WEBHOOK PLACEHOLDER
+// ============================================
+
+// IMPORTANT:
+// Stripe webhook will be mounted here later.
+// It must receive the raw request body using express.raw().
+// Never put the Stripe webhook route after express.json().
+
+// ============================================
+// 4. REQUEST BODY PARSER
+// ============================================
+
+// Parse JSON request bodies for normal API routes
+app.use(express.json({ limit: "1mb" }));
+
+// ============================================
+// 5. APPLICATION ROUTES
+// ============================================
+
+app.use("/api/categories", categoryRoutes);
+app.use("/api/equipment", equipmentRoutes);
+app.use("/api/bookings", bookingRoutes);
+app.use("/api/test", testRoutes);
+
+// ============================================
+// 6. ROOT ROUTE
+// ============================================
+
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -57,7 +80,10 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check
+// ============================================
+// 7. DATABASE HEALTH CHECK
+// ============================================
+
 app.get("/api/health", async (req, res, next) => {
   try {
     await getDB().command({ ping: 1 });
@@ -73,7 +99,10 @@ app.get("/api/health", async (req, res, next) => {
   }
 });
 
-// 404 handler
+// ============================================
+// 8. 404 HANDLER
+// ============================================
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -81,7 +110,10 @@ app.use((req, res) => {
   });
 });
 
-// Global error handler
+// ============================================
+// 9. GLOBAL ERROR HANDLER
+// ============================================
+
 app.use((error, req, res, next) => {
   console.error(error);
 
