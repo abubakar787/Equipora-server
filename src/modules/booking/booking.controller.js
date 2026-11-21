@@ -121,3 +121,128 @@ export const cancelBookingController = async (req, res, next) => {
     return next(error);
   }
 };
+
+ // ============================================
+ // 4. OWNER BOOKING MANAGEMENT CONTROLLERS
+ // ============================================
+
+/**
+ * Get all booking requests received by the logged-in owner.
+ *
+ * Supports:
+ * - Pagination
+ * - Booking status filtering
+ *
+ * Security:
+ * Only bookings belonging to the authenticated owner are returned.
+ */
+export const getOwnerBookingsController = async (req, res, next) => {
+  try {
+    // Validate optional booking status
+    const allowedStatuses = [
+      "pending_payment",
+      "approved_for_payment",
+      "confirmed",
+      "active",
+      "completed",
+      "cancelled",
+      "expired",
+      "rejected",
+    ];
+
+    const status = req.query.status;
+
+    if (status && !allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid booking status",
+      });
+    }
+
+    // Fetch owner's bookings from service layer
+    const result = await bookingService.getOwnerBookings(
+      req.user.id,
+      {
+        page: req.query.page,
+        limit: req.query.limit,
+        status,
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Owner bookings retrieved successfully",
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+
+/**
+ * Owner approves or rejects a booking request.
+ *
+ * Request body:
+ * {
+ *   "action": "approve",
+ *   "reviewNote": "Booking approved"
+ * }
+ *
+ * Approval allows the customer to proceed with payment.
+ * Actual booking confirmation happens after verified payment.
+ */
+export const updateOwnerBookingStatusController = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    // Validate the requested owner action
+    const { action, reviewNote = "" } = req.body;
+
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: "Action must be approve or reject",
+      });
+    }
+
+    // Validate review note
+    if (
+      typeof reviewNote !== "string" ||
+      reviewNote.trim().length > 500
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Review note must not exceed 500 characters",
+      });
+    }
+
+    // Update booking through service layer
+    const booking = await bookingService.updateOwnerBookingStatus(
+      req.params.id,
+      req.user.id,
+      action,
+      reviewNote.trim()
+    );
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found or no longer available for review",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        action === "approve"
+          ? "Booking approved for payment"
+          : "Booking request rejected successfully",
+      data: booking,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};

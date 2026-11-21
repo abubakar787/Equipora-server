@@ -5,7 +5,7 @@
 
 import express from "express";
 
-// Authentication and role authorization middleware
+// Authentication and authorization middleware
 import { verifyToken } from "../../middlewares/verifyToken.js";
 import { authorizeRole } from "../../middlewares/authorizeRole.js";
 
@@ -15,6 +15,8 @@ import {
   getMyBookingsController,
   getBookingByIdController,
   cancelBookingController,
+  getOwnerBookingsController,
+  updateOwnerBookingStatusController,
 } from "./booking.controller.js";
 
 
@@ -27,7 +29,6 @@ const router = express.Router();
 
 // ============================================
 // 3. CUSTOMER BOOKING ROUTES
-// All routes require customer authentication
 // ============================================
 
 // Create a new equipment booking
@@ -39,8 +40,6 @@ router.post(
 );
 
 // Get all bookings of the logged-in customer
-// Supports pagination and status filtering
-// Example: /api/bookings/my-bookings?page=1&limit=10
 router.get(
   "/my-bookings",
   verifyToken,
@@ -48,8 +47,33 @@ router.get(
   getMyBookingsController
 );
 
-// Get details of a specific booking
-// Customer can only access their own booking
+// ============================================
+// 4. OWNER BOOKING ROUTES
+// ============================================
+
+// Get booking requests for the logged-in owner
+// Supports pagination and status filtering
+router.get(
+  "/owner-bookings",
+  verifyToken,
+  authorizeRole("owner", "admin"),
+  getOwnerBookingsController
+);
+
+// Owner approves or rejects a booking request
+router.patch(
+  "/:id/owner-review",
+  verifyToken,
+  authorizeRole("owner"),
+  updateOwnerBookingStatusController
+);
+
+
+// ============================================
+// 5. CUSTOMER BOOKING DETAILS & CANCELLATION
+// ============================================
+
+// Get details of a specific customer booking
 router.get(
   "/:id",
   verifyToken,
@@ -58,7 +82,6 @@ router.get(
 );
 
 // Cancel an unpaid pending booking
-// Only the booking owner can cancel it
 router.patch(
   "/:id/cancel",
   verifyToken,
@@ -68,7 +91,7 @@ router.patch(
 
 
 // ============================================
-// 4. EXPORT ROUTER
+// 6. EXPORT ROUTER
 // ============================================
 
 export default router;

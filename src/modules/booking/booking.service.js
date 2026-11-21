@@ -97,15 +97,21 @@ export const createBooking = async (bookingData, customer) => {
         equipmentId: equipment._id,
         startAt: { $lt: requestedEnd },
         endAt: { $gt: requestedStart },
-        $or: [
-          {
-            status: { $in: ["confirmed", "active"] },
-          },
-          {
-            status: "pending_payment",
-            expiresAt: { $gt: now },
-          },
-        ],
+       // Count all bookings that currently reserve equipment stock
+$or: [
+  // Confirmed and active bookings always reserve stock
+  {
+    status: { $in: ["confirmed", "active"] },
+  },
+
+  // Pending and approved bookings reserve stock until expiration
+  {
+    status: {
+      $in: ["pending_payment", "approved_for_payment"],
+    },
+    expiresAt: { $gt: now },
+  },
+],
       },
     },
     {
@@ -248,7 +254,10 @@ export const cancelBooking = async (bookingId, customerId) => {
     {
       _id: new ObjectId(bookingId),
       customerId,
-      status: "pending_payment",
+      // Customer can cancel an unpaid pending or approved booking
+status: {
+  $in: ["pending_payment", "approved_for_payment"],
+},
       paymentStatus: "unpaid",
       expiresAt: { $gt: new Date() },
     },
@@ -257,6 +266,114 @@ export const cancelBooking = async (bookingId, customerId) => {
         status: "cancelled",
         cancelledAt: new Date(),
         updatedAt: new Date(),
+      },
+    },
+    {
+      returnDocument: "after",
+    }
+  );
+
+  return result;
+};
+
+// ============================================
+// 10. OWNER BOOKING MANAGEMENT
+// ============================================
+
+/**
+ * Get booking requests received by the authenticated owner.
+ * Only bookings for equipment owned by this owner are returned.
+ */
+export const getOwnerBookings = async (ownerId, filters = {}) => {
+  const collection = getBookingCollection();
+
+  // Pagination settings
+  const page = Math.max(Number(filters.page) || 1, 1);
+  const limit = Math.min(Math.max(Number(filters.limit) || 10, 1), 24);
+
+  // Security: restrict results to the authenticated owner
+  const query = {
+    ownerId,
+  };
+
+  // Optional booking status filter
+  if (filters.status) {
+    query.status = filters.status;
+  }
+
+  const skip = (page - 1) * limit;
+
+  // Fetch bookings and total count together
+  const [bookings, total] = await Promise.all([
+    collection
+      .find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray(),
+
+    collection.countDocuments(query),
+  ]);
+
+  return {
+    bookings,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPrevPage: page > 1,
+    },
+  };
+};
+
+
+/**
+ * Owner approves or rejects a pending booking request.
+ *
+ * Approval does NOT confirm the booking.
+ * Payment must be verified by the Stripe webhook first.
+ */
+export const updateOwnerBookingStatus = async (
+  bookingId,
+  ownerId,
+  action,
+  reviewNote = ""
+) => {
+  // Validate MongoDB booking ID
+  if (!ObjectId.isValid(bookingId)) {
+    return null;
+  }
+
+  // Map owner action to the appropriate booking status
+  const statusMap = {
+    approve: "approved_for_payment",
+    reject: "rejected",
+  };
+
+  const newStatus = statusMap[action];
+
+  if (!newStatus) {
+    throw new Error("Invalid booking action");
+  }
+
+  const now = new Date();
+
+  // Update only an active pending request belonging to this owner
+  const result = await getBookingCollection().findOneAndUpdate(
+    {
+      _id: new ObjectId(bookingId),
+      ownerId,
+      status: "pending_payment",
+      expiresAt: { $gt: now },
+    },
+    {
+      $set: {
+        status: newStatus,
+        ownerReviewNote: reviewNote,
+        ownerReviewedAt: now,
+        updatedAt: now,
       },
     },
     {

@@ -9,6 +9,9 @@ const requiredEnv = [
   "GOOGLE_CLIENT_SECRET",
   "GITHUB_CLIENT_ID",
   "GITHUB_CLIENT_SECRET",
+  // Stripe payment gateway environment variables
+"STRIPE_SECRET_KEY",
+"STRIPE_WEBHOOK_SECRET",
 ];
 
 for (const key of requiredEnv) {
@@ -20,6 +23,10 @@ for (const key of requiredEnv) {
 export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.PORT) || 5000,
+  
+  // Stripe payment configuration
+stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
 
   // Frontend
   clientUrl: process.env.CLIENT_URL || "http://localhost:3000",
