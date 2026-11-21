@@ -103,3 +103,35 @@ export const createCheckoutSession = async (bookingId, customer) => {
     sessionId: session.id,
   };
 };
+// Get payment history according to the logged-in user's role
+export const getPaymentHistory = async (user) => {
+  const payments = getDB().collection("payments");
+
+  // Customers can see only their own payments
+  // Owners can see payments received for their equipment
+  // Admins can see all platform payments
+  let query = {};
+
+  if (user.role === "customer") {
+    query.customerId = user.id;
+  } else if (user.role === "owner") {
+    query.ownerId = user.id;
+  } else if (user.role !== "admin") {
+    throw new Error("You are not allowed to view payment history");
+  }
+
+  // Fetch the latest payment records first
+  const [data, total] = await Promise.all([
+    payments.find(query)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray(),
+
+    payments.countDocuments(query),
+  ]);
+
+  return {
+    total,
+    data,
+  };
+};

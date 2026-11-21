@@ -5,6 +5,11 @@ import { ObjectId } from "mongodb";
 import { getDB } from "../../config/db.js";
 import { stripe } from "../../config/stripe.js";
 import { env } from "../../config/env.js";
+// Import payment history service
+import { getPaymentHistory } from "./payment.service.js";
+
+
+
 
 // Create a Stripe Checkout Session for the logged-in customer
 export const createCheckoutSessionController = async (req, res, next) => {
@@ -185,5 +190,20 @@ export const stripeWebhookController = async (req, res) => {
     // Return an error so Stripe can retry processing the event
     console.error("Stripe webhook processing failed:", error);
     return res.status(500).json({ message: "Webhook processing failed" });
+  }
+};
+
+// Return payment history for the authenticated user
+export const getPaymentHistoryController = async (req, res, next) => {
+  try {
+    const result = await getPaymentHistory(req.user);
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment history retrieved successfully",
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
   }
 };
