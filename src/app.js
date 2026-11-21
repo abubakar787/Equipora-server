@@ -14,6 +14,8 @@ import testRoutes from "./routes/test.routes.js";
 import equipmentRoutes from "./modules/equipment/equipment.routes.js";
 import categoryRoutes from "./modules/categories/category.routes.js";
 import bookingRoutes from "./modules/booking/booking.routes.js";
+// Stripe payment routes
+import paymentRoutes from "./modules/payments/payment.routes.js";
 
 const app = express();
 
@@ -61,14 +63,15 @@ app.all("/api/auth/*splat", toNodeHandler(auth));
 app.use(express.json({ limit: "1mb" }));
 
 // ============================================
+// ============================================
 // 5. APPLICATION ROUTES
 // ============================================
 
 app.use("/api/categories", categoryRoutes);
 app.use("/api/equipment", equipmentRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/payments", paymentRoutes);
 app.use("/api/test", testRoutes);
-
 // ============================================
 // 6. ROOT ROUTE
 // ============================================
