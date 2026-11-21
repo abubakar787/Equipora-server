@@ -20,6 +20,12 @@ import { stripeWebhookController } from "./modules/payments/payment.controller.j
 import expenseRoutes from "./modules/expenses/expense.routes.js";
 // User profile and management routes
 import userRoutes from "./modules/users/user.routes.js";
+// Customer favorites routes
+import favoriteRoutes from "./modules/favorites/favorite.routes.js";
+// Equipment reviews and ratings routes
+import reviewRoutes from "./modules/reviews/review.routes.js";
+
+
 
 // Create the Express application before registering any routes
 const app = express();
@@ -80,6 +86,10 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/test", testRoutes);
+// Customer favorites endpoints
+app.use("/api/favorites", favoriteRoutes);
+// Equipment reviews endpoints
+app.use("/api/reviews", reviewRoutes);
 // ============================================
 // 6. ROOT ROUTE
 // ============================================

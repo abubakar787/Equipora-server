@@ -74,6 +74,32 @@ export const connectDB = async () => {
 
     console.log("Favorites database indexes initialized");
  
+    // REVIEWS COLLECTION INDEXES
+    const reviews = database.collection("reviews");
+
+    // One review per booking
+    await reviews.createIndex(
+      { bookingId: 1 },
+      {
+        unique: true,
+        name: "unique_booking_review",
+      }
+    );
+
+    // Improve approved equipment review listing
+    await reviews.createIndex(
+      { equipmentId: 1, status: 1, createdAt: -1 },
+      { name: "equipment_approved_reviews" }
+    );
+
+    // Improve customer review history
+    await reviews.createIndex(
+      { customerId: 1, createdAt: -1 },
+      { name: "customer_review_history" }
+    );
+
+    console.log("Reviews database indexes initialized");
+
 
     return database;
   } catch (error) {
