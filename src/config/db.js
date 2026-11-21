@@ -2,29 +2,27 @@
 import { MongoClient } from "mongodb";
 import { env } from "./env.js";
 
-// Create the MongoDB client
+// Create MongoDB client
 export const client = new MongoClient(env.mongoUri);
 
-// Select the EQUIPORA database
+// Select EQUIPORA database
 const database = client.db(env.dbName);
 
-// Connect to MongoDB and initialize database indexes
+// Connect database and initialize indexes
 export const connectDB = async () => {
   try {
     await client.connect();
 
-    // Confirm that MongoDB is reachable
     await database.command({ ping: 1 });
 
     console.log("MongoDB connected successfully");
 
-    // ============================================
-    // PAYMENT COLLECTION INDEXES
-    // ============================================
+    // =========================================
+    // 1. PAYMENT INDEXES
+    // =========================================
 
     const payments = database.collection("payments");
 
-    // Prevent duplicate payment records for the same Stripe session
     await payments.createIndex(
       { stripeSessionId: 1 },
       {
@@ -36,28 +34,68 @@ export const connectDB = async () => {
       }
     );
 
-    // Improve customer payment history queries
     await payments.createIndex(
       { customerId: 1, createdAt: -1 },
       { name: "customer_payment_history" }
     );
 
-    // Improve owner payment history queries
     await payments.createIndex(
       { ownerId: 1, createdAt: -1 },
       { name: "owner_payment_history" }
     );
 
-    // Improve admin payment history queries
     await payments.createIndex(
       { createdAt: -1 },
       { name: "admin_payment_history" }
     );
 
-    // FAVORITES COLLECTION INDEXES
+    await payments.createIndex(
+      { stripePaymentIntentId: 1 },
+      { name: "stripe_payment_intent_lookup" }
+    );
+
+    await payments.createIndex(
+      { bookingId: 1 },
+      { name: "booking_payment_lookup" }
+    );
+
+    console.log("Payment database indexes initialized");
+
+    // =========================================
+    // 2. REFUND INDEXES
+    // =========================================
+
+    const refunds = database.collection("refunds");
+
+    await refunds.createIndex(
+      { stripeRefundId: 1 },
+      {
+        unique: true,
+        partialFilterExpression: {
+          stripeRefundId: { $type: "string" },
+        },
+        name: "unique_stripe_refund",
+      }
+    );
+
+    await refunds.createIndex(
+      { paymentId: 1, createdAt: -1 },
+      { name: "payment_refund_history" }
+    );
+
+    await refunds.createIndex(
+      { bookingId: 1, createdAt: -1 },
+      { name: "booking_refund_history" }
+    );
+
+    console.log("Refund database indexes initialized");
+
+    // =========================================
+    // 3. FAVORITES INDEXES
+    // =========================================
+
     const favorites = database.collection("favorites");
 
-    // Prevent duplicate favorites for the same customer and equipment
     await favorites.createIndex(
       { customerId: 1, equipmentId: 1 },
       {
@@ -66,18 +104,19 @@ export const connectDB = async () => {
       }
     );
 
-    // Improve customer favorite listing performance
     await favorites.createIndex(
       { customerId: 1, createdAt: -1 },
       { name: "customer_favorites_history" }
     );
 
     console.log("Favorites database indexes initialized");
- 
-    // REVIEWS COLLECTION INDEXES
+
+    // =========================================
+    // 4. REVIEWS INDEXES
+    // =========================================
+
     const reviews = database.collection("reviews");
 
-    // One review per booking
     await reviews.createIndex(
       { bookingId: 1 },
       {
@@ -86,13 +125,11 @@ export const connectDB = async () => {
       }
     );
 
-    // Improve approved equipment review listing
     await reviews.createIndex(
       { equipmentId: 1, status: 1, createdAt: -1 },
       { name: "equipment_approved_reviews" }
     );
 
-    // Improve customer review history
     await reviews.createIndex(
       { customerId: 1, createdAt: -1 },
       { name: "customer_review_history" }
@@ -100,18 +137,21 @@ export const connectDB = async () => {
 
     console.log("Reviews database indexes initialized");
 
-
     return database;
   } catch (error) {
-    console.error("MongoDB initialization failed:", error.message);
+    console.error(
+      "MongoDB initialization failed:",
+      error.message
+    );
+
     throw error;
   }
 };
 
-// Access the connected database
+// Access database
 export const getDB = () => database;
 
-// Gracefully close MongoDB connection
+// Close database connection
 export const closeDB = async () => {
   await client.close();
   console.log("MongoDB connection closed");

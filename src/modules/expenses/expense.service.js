@@ -3,13 +3,13 @@ import { ObjectId } from "mongodb";
 import { getDB } from "../../config/db.js";
 
 // Access the expenses collection
-const getExpenseCollection = () => getDB().collection("expenses");
+const getExpenseCollection = () =>
+  getDB().collection("expenses");
 
 // ============================================
 // 1. CREATE EXPENSE
 // ============================================
 
-// Save a new business expense
 export const createExpense = async (expenseData, admin) => {
   const expenses = getExpenseCollection();
 
@@ -22,11 +22,14 @@ export const createExpense = async (expenseData, admin) => {
     amountCents: expenseData.amountCents,
     currency: "usd",
 
-    expenseDate: new Date(`${expenseData.expenseDate}T00:00:00.000Z`),
+    expenseDate: new Date(
+      `${expenseData.expenseDate}T00:00:00.000Z`
+    ),
 
     reference: expenseData.reference || "",
 
-    // Keep a record of the admin who created this expense
+    // Expense audit information
+    status: "active",
     createdBy: admin.id,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -44,13 +47,13 @@ export const createExpense = async (expenseData, admin) => {
 // 2. GET ALL EXPENSES
 // ============================================
 
-// Retrieve expense records with pagination and category filtering
 export const getAllExpenses = async (query) => {
   const expenses = getExpenseCollection();
 
-  const filter = {};
+  const filter = {
+    status: { $ne: "void" },
+  };
 
-  // Filter by expense category when provided
   if (query.category) {
     filter.category = query.category;
   }
@@ -85,13 +88,13 @@ export const getAllExpenses = async (query) => {
 // 3. UPDATE EXPENSE
 // ============================================
 
-// Update an existing expense record
 export const updateExpense = async (expenseId, updateData) => {
   if (!ObjectId.isValid(expenseId)) {
     throw new Error("Invalid expense ID");
   }
 
   const expenses = getExpenseCollection();
+  const objectId = new ObjectId(expenseId);
 
   const allowedFields = [
     "title",
@@ -104,7 +107,6 @@ export const updateExpense = async (expenseId, updateData) => {
 
   const updates = {};
 
-  // Only allow approved expense fields to be updated
   for (const field of allowedFields) {
     if (updateData[field] !== undefined) {
       updates[field] =
@@ -121,36 +123,55 @@ export const updateExpense = async (expenseId, updateData) => {
   updates.updatedAt = new Date();
 
   const result = await expenses.updateOne(
-    { _id: new ObjectId(expenseId) },
-    { $set: updates }
+    {
+      _id: objectId,
+      status: { $ne: "void" },
+    },
+    {
+      $set: updates,
+    }
   );
 
   if (result.matchedCount === 0) {
-    throw new Error("Expense record not found");
+    throw new Error("Active expense record not found");
   }
 
-  return expenses.findOne({ _id: new ObjectId(expenseId) });
+  return expenses.findOne({ _id: objectId });
 };
 
 // ============================================
-// 4. DELETE EXPENSE
+// 4. VOID EXPENSE (SOFT DELETE)
 // ============================================
 
-// Delete an expense record
-export const deleteExpense = async (expenseId) => {
+export const deleteExpense = async (expenseId, admin) => {
   if (!ObjectId.isValid(expenseId)) {
     throw new Error("Invalid expense ID");
   }
 
   const expenses = getExpenseCollection();
+  const objectId = new ObjectId(expenseId);
 
-  const result = await expenses.deleteOne({
-    _id: new ObjectId(expenseId),
-  });
+  const result = await expenses.updateOne(
+    {
+      _id: objectId,
+      status: { $ne: "void" },
+    },
+    {
+      $set: {
+        status: "void",
+        voidedBy: admin.id,
+        voidedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    }
+  );
 
-  if (result.deletedCount === 0) {
-    throw new Error("Expense record not found");
+  if (result.matchedCount === 0) {
+    throw new Error("Active expense record not found");
   }
 
-  return { deleted: true };
+  return {
+    deleted: true,
+    message: "Expense successfully voided",
+  };
 };

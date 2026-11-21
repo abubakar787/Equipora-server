@@ -136,14 +136,20 @@ export const getFinancialSummary = async () => {
 
   // Calculate recorded business expenses
   const expenseSummary = await expenses.aggregate([
-    {
-      $group: {
-        _id: null,
-        totalExpensesCents: { $sum: "$amountCents" },
-        totalExpenseRecords: { $sum: 1 },
-      },
+  {
+    $match: {
+      status: { $ne: "void" },
+      currency: "usd",
     },
-  ]).toArray();
+  },
+  {
+    $group: {
+      _id: null,
+      totalExpensesCents: { $sum: "$amountCents" },
+      totalExpenseRecords: { $sum: 1 },
+    },
+  },
+]).toArray();
 
   const paymentData = paymentSummary[0] || {};
   const expenseData = expenseSummary[0] || {};

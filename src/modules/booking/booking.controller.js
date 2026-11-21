@@ -1,13 +1,16 @@
-
-import { createBookingSchema } from "./booking.validation.js";
-import * as bookingService from "./booking.service.js";
+ 
 import {
-    completeBooking,
-} from "./booking.service.js";
+  createBookingSchema,
+  bookingQuerySchema,
+} from "./booking.validation.js";
 
+import * as bookingService from "./booking.service.js";
+
+/**
+ * Create a new booking reservation
+ */
 export const createBookingController = async (req, res, next) => {
   try {
-    // 1. Validate request body
     const validation = createBookingSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -18,13 +21,11 @@ export const createBookingController = async (req, res, next) => {
       });
     }
 
-    // 2. Create booking using authenticated customer
     const booking = await bookingService.createBooking(
       validation.data,
       req.user
     );
 
-    // 3. Send response
     return res.status(201).json({
       success: true,
       message: "Booking reservation created successfully",
@@ -35,34 +36,24 @@ export const createBookingController = async (req, res, next) => {
   }
 };
 
-
+/**
+ * Get bookings of the authenticated customer
+ */
 export const getMyBookingsController = async (req, res, next) => {
   try {
-    const allowedStatuses = [
-      "pending_payment",
-      "confirmed",
-      "active",
-      "completed",
-      "cancelled",
-      "expired",
-    ];
+    const validation = bookingQuerySchema.safeParse(req.query);
 
-    const status = req.query.status;
-
-    if (status && !allowedStatuses.includes(status)) {
+    if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid booking status",
+        message: "Invalid booking filters",
+        errors: validation.error.flatten().fieldErrors,
       });
     }
 
     const result = await bookingService.getMyBookings(
       req.user.id,
-      {
-        page: req.query.page,
-        limit: req.query.limit,
-        status,
-      }
+      validation.data
     );
 
     return res.status(200).json({
@@ -75,7 +66,9 @@ export const getMyBookingsController = async (req, res, next) => {
   }
 };
 
-
+/**
+ * Get a specific booking belonging to the customer
+ */
 export const getBookingByIdController = async (req, res, next) => {
   try {
     const booking = await bookingService.getBookingById(
@@ -100,7 +93,9 @@ export const getBookingByIdController = async (req, res, next) => {
   }
 };
 
-
+/**
+ * Cancel an unpaid pending booking
+ */
 export const cancelBookingController = async (req, res, next) => {
   try {
     const booking = await bookingService.cancelBooking(
@@ -111,7 +106,8 @@ export const cancelBookingController = async (req, res, next) => {
     if (!booking) {
       return res.status(400).json({
         success: false,
-        message: "Booking cannot be cancelled. It may already be paid, expired, or unavailable.",
+        message:
+          "Booking cannot be cancelled. It may already be paid, expired, or unavailable.",
       });
     }
 
@@ -125,51 +121,24 @@ export const cancelBookingController = async (req, res, next) => {
   }
 };
 
- // ============================================
- // 4. OWNER BOOKING MANAGEMENT CONTROLLERS
- // ============================================
-
 /**
- * Get all booking requests received by the logged-in owner.
- *
- * Supports:
- * - Pagination
- * - Booking status filtering
- *
- * Security:
- * Only bookings belonging to the authenticated owner are returned.
+ * Get booking requests received by the authenticated owner
  */
 export const getOwnerBookingsController = async (req, res, next) => {
   try {
-    // Validate optional booking status
-    const allowedStatuses = [
-      "pending_payment",
-      "approved_for_payment",
-      "confirmed",
-      "active",
-      "completed",
-      "cancelled",
-      "expired",
-      "rejected",
-    ];
+    const validation = bookingQuerySchema.safeParse(req.query);
 
-    const status = req.query.status;
-
-    if (status && !allowedStatuses.includes(status)) {
+    if (!validation.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid booking status",
+        message: "Invalid booking filters",
+        errors: validation.error.flatten().fieldErrors,
       });
     }
 
-    // Fetch owner's bookings from service layer
     const result = await bookingService.getOwnerBookings(
       req.user.id,
-      {
-        page: req.query.page,
-        limit: req.query.limit,
-        status,
-      }
+      validation.data
     );
 
     return res.status(200).json({
@@ -182,18 +151,8 @@ export const getOwnerBookingsController = async (req, res, next) => {
   }
 };
 
-
 /**
- * Owner approves or rejects a booking request.
- *
- * Request body:
- * {
- *   "action": "approve",
- *   "reviewNote": "Booking approved"
- * }
- *
- * Approval allows the customer to proceed with payment.
- * Actual booking confirmation happens after verified payment.
+ * Owner approves or rejects a booking request
  */
 export const updateOwnerBookingStatusController = async (
   req,
@@ -201,7 +160,6 @@ export const updateOwnerBookingStatusController = async (
   next
 ) => {
   try {
-    // Validate the requested owner action
     const { action, reviewNote = "" } = req.body;
 
     if (!["approve", "reject"].includes(action)) {
@@ -211,7 +169,6 @@ export const updateOwnerBookingStatusController = async (
       });
     }
 
-    // Validate review note
     if (
       typeof reviewNote !== "string" ||
       reviewNote.trim().length > 500
@@ -222,7 +179,6 @@ export const updateOwnerBookingStatusController = async (
       });
     }
 
-    // Update booking through service layer
     const booking = await bookingService.updateOwnerBookingStatus(
       req.params.id,
       req.user.id,
@@ -253,9 +209,9 @@ export const updateOwnerBookingStatusController = async (
 /**
  * Owner completes a rental booking
  */
-export const completeBookingController = async (req, res) => {
+export const completeBookingController = async (req, res, next) => {
   try {
-    const booking = await completeBooking(
+    const booking = await bookingService.completeBooking(
       req.params.id,
       req.user.id
     );
@@ -266,16 +222,6 @@ export const completeBookingController = async (req, res) => {
       data: booking,
     });
   } catch (error) {
-    console.error("Complete booking error:", error);
-
-    const statusCode =
-      error.message === "Booking not found or access denied" ? 404 :
-      error.message === "Invalid booking ID" ? 400 :
-      409;
-
-    return res.status(statusCode).json({
-      success: false,
-      message: error.message || "Failed to complete booking",
-    });
+    return next(error);
   }
 };

@@ -1,22 +1,18 @@
+
 import express from "express";
 
-// Authentication and role authorization
 import { verifyToken } from "../../middlewares/verifyToken.js";
 import { authorizeRole } from "../../middlewares/authorizeRole.js";
 
-// Import both payment controllers only once
 import {
   createCheckoutSessionController,
   getPaymentHistoryController,
 } from "./payment.controller.js";
 
-
-// Financial dashboard controller
 import {
   getFinancialSummaryController,
 } from "./financial.controller.js";
 
-// Financial settings controllers
 import {
   getFinancialSettingsController,
   updateFinancialSettingsController,
@@ -24,8 +20,10 @@ import {
 
 const router = express.Router();
 
+// =========================================
+// ADMIN FINANCIAL SETTINGS
+// =========================================
 
-// Admin-only financial settings
 router.get(
   "/financial-settings",
   verifyToken,
@@ -40,7 +38,10 @@ router.patch(
   updateFinancialSettingsController
 );
 
-// Admin-only financial dashboard summary
+// =========================================
+// ADMIN FINANCIAL SUMMARY
+// =========================================
+
 router.get(
   "/financial-summary",
   verifyToken,
@@ -48,7 +49,10 @@ router.get(
   getFinancialSummaryController
 );
 
-// Get payment history for customers, owners and admins
+// =========================================
+// PAYMENT HISTORY
+// =========================================
+
 router.get(
   "/history",
   verifyToken,
@@ -56,7 +60,10 @@ router.get(
   getPaymentHistoryController
 );
 
-// Create Stripe Checkout Session for an approved booking
+// =========================================
+// STRIPE CHECKOUT
+// =========================================
+
 router.post(
   "/checkout/:bookingId",
   verifyToken,

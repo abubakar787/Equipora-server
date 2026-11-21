@@ -24,6 +24,8 @@ import userRoutes from "./modules/users/user.routes.js";
 import favoriteRoutes from "./modules/favorites/favorite.routes.js";
 // Equipment reviews and ratings routes
 import reviewRoutes from "./modules/reviews/review.routes.js";
+// Admin dashboard and analytics routes
+import adminRoutes from "./modules/admin/admin.routes.js";
 
 
 
@@ -90,6 +92,8 @@ app.use("/api/test", testRoutes);
 app.use("/api/favorites", favoriteRoutes);
 // Equipment reviews endpoints
 app.use("/api/reviews", reviewRoutes);
+// Admin dashboard endpoints
+app.use("/api/admin", adminRoutes);
 // ============================================
 // 6. ROOT ROUTE
 // ============================================

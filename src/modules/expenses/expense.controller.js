@@ -100,15 +100,21 @@ export const updateExpenseController = async (req, res, next) => {
 // 4. DELETE EXPENSE
 // ============================================
 
+
 export const deleteExpenseController = async (req, res, next) => {
   try {
-    await deleteExpense(req.params.id);
+    const result = await deleteExpense(
+      req.params.id,
+      req.user
+    );
 
     return res.status(200).json({
       success: true,
-      message: "Expense deleted successfully",
+      message: "Expense voided successfully",
+      data: result,
     });
   } catch (error) {
     return next(error);
   }
 };
+
