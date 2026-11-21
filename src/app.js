@@ -16,6 +16,16 @@ import categoryRoutes from "./modules/categories/category.routes.js";
 import bookingRoutes from "./modules/booking/booking.routes.js";
 // Stripe payment routes
 import paymentRoutes from "./modules/payments/payment.routes.js";
+// Stripe webhook controller
+import { stripeWebhookController } from "./modules/payments/payment.controller.js";
+
+
+// Stripe webhook must receive the original raw request body
+app.post(
+  "/api/payments/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhookController
+);
 
 const app = express();
 
