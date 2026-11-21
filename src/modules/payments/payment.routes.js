@@ -18,11 +18,15 @@ import {
   updateFinancialSettingsController,
 } from "./financial-settings.controller.js";
 
+import {
+  createRefundController,
+} from "./refund.controller.js";
+
 const router = express.Router();
 
-// =========================================
+// ============================================
 // ADMIN FINANCIAL SETTINGS
-// =========================================
+// ============================================
 
 router.get(
   "/financial-settings",
@@ -38,9 +42,9 @@ router.patch(
   updateFinancialSettingsController
 );
 
-// =========================================
+// ============================================
 // ADMIN FINANCIAL SUMMARY
-// =========================================
+// ============================================
 
 router.get(
   "/financial-summary",
@@ -49,9 +53,9 @@ router.get(
   getFinancialSummaryController
 );
 
-// =========================================
+// ============================================
 // PAYMENT HISTORY
-// =========================================
+// ============================================
 
 router.get(
   "/history",
@@ -60,9 +64,20 @@ router.get(
   getPaymentHistoryController
 );
 
-// =========================================
+// ============================================
+// ADMIN REFUND
+// ============================================
+
+router.post(
+  "/refunds",
+  verifyToken,
+  authorizeRole("admin"),
+  createRefundController
+);
+
+// ============================================
 // STRIPE CHECKOUT
-// =========================================
+// ============================================
 
 router.post(
   "/checkout/:bookingId",

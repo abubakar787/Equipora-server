@@ -115,41 +115,75 @@ export const getFinancialSummary = async () => {
   const payments = db.collection("payments");
   const expenses = db.collection("expenses");
 
-  // Calculate successful rental payments
+  // Include successful payments even when partially or fully refunded.
   const paymentSummary = await payments.aggregate([
     {
       $match: {
-        status: "paid",
+        status: {
+          $in: ["paid", "partially_refunded", "refunded"],
+        },
         currency: "usd",
       },
     },
     {
       $group: {
         _id: null,
-        totalRentalRevenueCents: { $sum: "$amountCents" },
-        equiporaRevenueCents: { $sum: "$commissionCents" },
-        ownerEarningsCents: { $sum: "$ownerEarningsCents" },
+
+        // Rental revenue after deducting refunds.
+        totalRentalRevenueCents: {
+          $sum: {
+            $subtract: [
+              "$amountCents",
+              { $ifNull: ["$refundedAmountCents", 0] },
+            ],
+          },
+        },
+
+        // EQUIPORA commission after commission refunds.
+        equiporaRevenueCents: {
+          $sum: {
+            $subtract: [
+              "$commissionCents",
+              { $ifNull: ["$refundedCommissionCents", 0] },
+            ],
+          },
+        },
+
+        // Owner earnings after owner refund adjustments.
+        ownerEarningsCents: {
+          $sum: {
+            $subtract: [
+              "$ownerEarningsCents",
+              { $ifNull: ["$refundedOwnerEarningsCents", 0] },
+            ],
+          },
+        },
+
         totalPayments: { $sum: 1 },
+
+        totalRefundedCents: {
+          $sum: { $ifNull: ["$refundedAmountCents", 0] },
+        },
       },
     },
   ]).toArray();
 
-  // Calculate recorded business expenses
+  // Calculate recorded business expenses.
   const expenseSummary = await expenses.aggregate([
-  {
-    $match: {
-      status: { $ne: "void" },
-      currency: "usd",
+    {
+      $match: {
+        status: { $ne: "void" },
+        currency: "usd",
+      },
     },
-  },
-  {
-    $group: {
-      _id: null,
-      totalExpensesCents: { $sum: "$amountCents" },
-      totalExpenseRecords: { $sum: 1 },
+    {
+      $group: {
+        _id: null,
+        totalExpensesCents: { $sum: "$amountCents" },
+        totalExpenseRecords: { $sum: 1 },
+      },
     },
-  },
-]).toArray();
+  ]).toArray();
 
   const paymentData = paymentSummary[0] || {};
   const expenseData = expenseSummary[0] || {};
@@ -163,19 +197,24 @@ export const getFinancialSummary = async () => {
   const ownerEarningsCents =
     paymentData.ownerEarningsCents || 0;
 
+  const totalRefundedCents =
+    paymentData.totalRefundedCents || 0;
+
   const totalExpensesCents =
     expenseData.totalExpensesCents || 0;
 
-  // Platform net profit
+  // EQUIPORA net profit = net commission - operating expenses.
   const netProfitCents =
     equiporaRevenueCents - totalExpensesCents;
 
   return {
     currency: "usd",
+
     summary: {
       totalRentalRevenueCents,
       equiporaRevenueCents,
       ownerEarningsCents,
+      totalRefundedCents,
       totalExpensesCents,
       netProfitCents,
       totalPayments: paymentData.totalPayments || 0,

@@ -46,7 +46,11 @@ export const getAdminDashboardAnalytics = async () => {
     bookings.countDocuments({ status: "completed" }),
     bookings.countDocuments({ status: "cancelled" }),
 
-    payments.countDocuments({ status: "paid" }),
+    payments.countDocuments({
+  status: {
+    $in: ["paid", "partially_refunded", "refunded"],
+  },
+}),
 
     getFinancialSummary(),
   ]);
