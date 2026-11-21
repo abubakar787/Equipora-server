@@ -54,7 +54,26 @@ export const connectDB = async () => {
       { name: "admin_payment_history" }
     );
 
-    console.log("Payment database indexes initialized");
+    // FAVORITES COLLECTION INDEXES
+    const favorites = database.collection("favorites");
+
+    // Prevent duplicate favorites for the same customer and equipment
+    await favorites.createIndex(
+      { customerId: 1, equipmentId: 1 },
+      {
+        unique: true,
+        name: "unique_customer_equipment_favorite",
+      }
+    );
+
+    // Improve customer favorite listing performance
+    await favorites.createIndex(
+      { customerId: 1, createdAt: -1 },
+      { name: "customer_favorites_history" }
+    );
+
+    console.log("Favorites database indexes initialized");
+ 
 
     return database;
   } catch (error) {
