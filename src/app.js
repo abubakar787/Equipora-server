@@ -14,19 +14,10 @@ import testRoutes from "./routes/test.routes.js";
 import equipmentRoutes from "./modules/equipment/equipment.routes.js";
 import categoryRoutes from "./modules/categories/category.routes.js";
 import bookingRoutes from "./modules/booking/booking.routes.js";
-// Stripe payment routes
 import paymentRoutes from "./modules/payments/payment.routes.js";
-// Stripe webhook controller
 import { stripeWebhookController } from "./modules/payments/payment.controller.js";
 
-
-// Stripe webhook must receive the original raw request body
-app.post(
-  "/api/payments/webhook",
-  express.raw({ type: "application/json" }),
-  stripeWebhookController
-);
-
+// Create the Express application before registering any routes
 const app = express();
 
 // ============================================
@@ -44,7 +35,7 @@ app.use(
   })
 );
 
-// HTTP request logger
+// Log HTTP requests during development
 if (env.nodeEnv === "development") {
   app.use(morgan("dev"));
 }
@@ -53,26 +44,28 @@ if (env.nodeEnv === "development") {
 // 2. BETTER AUTH
 // ============================================
 
-// Better Auth handler must be before express.json()
+// Better Auth handler must run before express.json()
 app.all("/api/auth/*splat", toNodeHandler(auth));
 
 // ============================================
-// 3. STRIPE WEBHOOK PLACEHOLDER
+// 3. STRIPE WEBHOOK
 // ============================================
 
-// IMPORTANT:
-// Stripe webhook will be mounted here later.
-// It must receive the raw request body using express.raw().
-// Never put the Stripe webhook route after express.json().
+// Stripe requires the original raw request body for signature verification.
+// This route must be registered before express.json().
+app.post(
+  "/api/payments/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhookController
+);
 
 // ============================================
 // 4. REQUEST BODY PARSER
 // ============================================
 
-// Parse JSON request bodies for normal API routes
+// Parse JSON bodies for normal API requests
 app.use(express.json({ limit: "1mb" }));
 
-// ============================================
 // ============================================
 // 5. APPLICATION ROUTES
 // ============================================
@@ -82,6 +75,7 @@ app.use("/api/equipment", equipmentRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/test", testRoutes);
+
 // ============================================
 // 6. ROOT ROUTE
 // ============================================
