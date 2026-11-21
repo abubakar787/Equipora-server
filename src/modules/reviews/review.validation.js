@@ -29,3 +29,12 @@ export const reviewQuerySchema = z.object({
 
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
+
+/**
+ * Validate admin review moderation request
+ */
+export const reviewModerationSchema = z.object({
+  status: z.enum(["approved", "rejected"]),
+
+  moderationNote: z.string().trim().max(500).optional().default(""),
+});

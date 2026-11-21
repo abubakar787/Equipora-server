@@ -7,9 +7,11 @@ import { authorizeRole } from "../../middlewares/authorizeRole.js";
 
 // Review controllers
 import {
+  getEquipmentReviewsController,
   createReviewController,
   updateReviewController,
-  getEquipmentReviewsController,
+  getPendingReviewsController,
+  moderateReviewController,
 } from "./review.controller.js";
 
 const router = express.Router();
@@ -34,6 +36,22 @@ router.patch(
   verifyToken,
   authorizeRole("customer"),
   updateReviewController
+);
+
+// Admin: Get all pending reviews
+router.get(
+  "/admin/pending",
+  verifyToken,
+  authorizeRole("admin"),
+  getPendingReviewsController
+);
+
+// Admin: Approve or reject a review
+router.patch(
+  "/admin/:id/moderate",
+  verifyToken,
+  authorizeRole("admin"),
+  moderateReviewController
 );
 
 export default router;

@@ -153,3 +153,84 @@ export const getEquipmentReviews = async (equipmentId, query) => {
     },
   };
 };
+
+/**
+ * Get pending reviews for admin moderation
+ */
+export const getPendingReviews = async (query) => {
+  const reviews = getReviewCollection();
+
+  const page = query.page || 1;
+  const limit = query.limit || 10;
+  const skip = (page - 1) * limit;
+
+  const filter = { status: "pending" };
+
+  const [data, total] = await Promise.all([
+    reviews.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray(),
+
+    reviews.countDocuments(filter),
+  ]);
+
+  return {
+    data,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+};
+
+/**
+ * Approve or reject a customer review
+ */
+export const moderateReview = async (
+  reviewId,
+  moderationData,
+  adminId
+) => {
+  if (!ObjectId.isValid(reviewId)) {
+    throw new Error("Invalid review ID");
+  }
+
+  const reviews = getReviewCollection();
+  const reviewObjectId = new ObjectId(reviewId);
+
+  const result = await reviews.updateOne(
+    {
+      _id: reviewObjectId,
+      status: "pending",
+    },
+    {
+      $set: {
+        status: moderationData.status,
+        moderationNote: moderationData.moderationNote || "",
+        moderatedBy: adminId,
+        moderatedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    }
+  );
+
+  if (result.matchedCount === 0) {
+    const existingReview = await reviews.findOne({
+      _id: reviewObjectId,
+    });
+
+    if (!existingReview) {
+      throw new Error("Review not found");
+    }
+
+    throw new Error("Review has already been moderated");
+  }
+
+  return reviews.findOne({
+    _id: reviewObjectId,
+  });
+};

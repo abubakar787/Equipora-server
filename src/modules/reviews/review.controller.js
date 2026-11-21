@@ -11,6 +11,17 @@ import {
   reviewQuerySchema,
 } from "./review.validation.js";
 
+// Admin review moderation services
+import {
+  getPendingReviews,
+  moderateReview,
+} from "./review.service.js";
+
+// Admin moderation validation
+import {
+  reviewModerationSchema,
+} from "./review.validation.js";
+
 // Create a review for a completed rental
 export const createReviewController = async (req, res) => {
   try {
@@ -118,6 +129,80 @@ export const getEquipmentReviewsController = async (req, res) => {
     return res.status(statusCode).json({
       success: false,
       message: error.message || "Failed to retrieve equipment reviews",
+    });
+  }
+};
+
+
+/**
+ * Get pending reviews for admin dashboard
+ */
+export const getPendingReviewsController = async (req, res) => {
+  try {
+    const validation = reviewQuerySchema.safeParse(req.query);
+
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid pagination parameters",
+        errors: validation.error.flatten(),
+      });
+    }
+
+    const result = await getPendingReviews(validation.data);
+
+    return res.status(200).json({
+      success: true,
+      message: "Pending reviews retrieved successfully",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Get pending reviews error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve pending reviews",
+    });
+  }
+};
+
+/**
+ * Approve or reject a customer review
+ */
+export const moderateReviewController = async (req, res) => {
+  try {
+    const validation = reviewModerationSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid moderation information",
+        errors: validation.error.flatten(),
+      });
+    }
+
+    const review = await moderateReview(
+      req.params.id,
+      validation.data,
+      req.user.id
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Review ${validation.data.status} successfully`,
+      data: review,
+    });
+  } catch (error) {
+    console.error("Moderate review error:", error);
+
+    const statusCode =
+      error.message === "Review not found" ? 404 :
+      error.message === "Review has already been moderated" ? 409 :
+      400;
+
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || "Failed to moderate review",
     });
   }
 };
