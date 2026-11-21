@@ -1,16 +1,14 @@
+
 import { MongoClient } from "mongodb";
 import { env } from "./env.js";
 
-const client = new MongoClient(env.mongoUri);
+export const client = new MongoClient(env.mongoUri);
 
-let database;
+const database = client.db(env.dbName);
 
 export const connectDB = async () => {
   try {
     await client.connect();
-
-    database = client.db(env.dbName);
-
     await database.command({ ping: 1 });
 
     console.log("MongoDB connected successfully");
@@ -22,14 +20,9 @@ export const connectDB = async () => {
   }
 };
 
-export const getDB = () => {
-  if (!database) {
-    throw new Error("Database is not connected yet");
-  }
-
-  return database;
-};
+export const getDB = () => database;
 
 export const closeDB = async () => {
   await client.close();
+  console.log("MongoDB connection closed");
 };
