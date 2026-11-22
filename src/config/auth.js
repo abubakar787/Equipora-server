@@ -1,3 +1,4 @@
+
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "@better-auth/mongo-adapter";
 import { jwt } from "better-auth/plugins";
@@ -22,7 +23,7 @@ export const auth = betterAuth({
     "http://localhost:3000",
   ],
 
-  // Cross-origin cookie settings (required when frontend & backend are on separate Vercel domains)
+  // Cross-origin cookie configuration
   advanced: {
     defaultCookieAttributes: {
       sameSite: "none",
@@ -43,6 +44,10 @@ export const auth = betterAuth({
       enabled: true,
       trustedProviders: ["google", "github"],
       allowDifferentEmails: false,
+
+      // Allow verified Google/GitHub email to link
+      // with an existing local account whose emailVerified is false.
+      requireLocalEmailVerified: false,
     },
   },
 
@@ -52,26 +57,11 @@ export const auth = betterAuth({
       clientId: env.googleClientId,
       clientSecret: env.googleClientSecret,
     },
+
     github: {
       clientId: env.githubClientId,
       clientSecret: env.githubClientSecret,
       scope: ["user:email"],
-    },
-  },
-
-  // Auto-mark emailVerified on signup so OAuth linking works without email verification
-  databaseHooks: {
-    user: {
-      create: {
-        before: async (user) => {
-          return {
-            data: {
-              ...user,
-              emailVerified: true,
-            },
-          };
-        },
-      },
     },
   },
 
