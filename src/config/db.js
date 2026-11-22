@@ -6,30 +6,31 @@ import { env } from "./env.js";
 // 1. GLOBAL MONGODB CLIENT CACHE
 // ============================================
 
-// Reuse the MongoDB client across serverless warm instances
 const globalForMongo = globalThis;
 
-export const client =
+const client =
   globalForMongo.__equiporaMongoClient ??
   (globalForMongo.__equiporaMongoClient = new MongoClient(
     env.mongoUri,
     {
       maxPoolSize: 10,
       minPoolSize: 0,
-      maxIdleTimeMS: 10000,
       serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
     }
   ));
 
-// Select EQUIPORA database
+export { client };
+
+// Database instance
 const database = client.db(env.dbName);
 
 // ============================================
-// 2. DATABASE CONNECTION INITIALIZATION
+// 2. CONNECTION INITIALIZATION
 // ============================================
 
 export const connectDB = async () => {
-  // Reuse an existing initialization promise
+  // Reuse the existing connection initialization
   if (globalForMongo.__equiporaMongoConnectPromise) {
     return globalForMongo.__equiporaMongoConnectPromise;
   }
@@ -42,9 +43,9 @@ export const connectDB = async () => {
 
       console.log("MongoDB connected successfully");
 
-      // =========================================
+      // ========================================
       // 3. PAYMENT INDEXES
-      // =========================================
+      // ========================================
 
       const payments = database.collection("payments");
 
@@ -84,11 +85,11 @@ export const connectDB = async () => {
         { name: "booking_payment_lookup" }
       );
 
-      console.log("Payment database indexes initialized");
+      console.log("Payment indexes initialized");
 
-      // =========================================
+      // ========================================
       // 4. REFUND INDEXES
-      // =========================================
+      // ========================================
 
       const refunds = database.collection("refunds");
 
@@ -113,11 +114,11 @@ export const connectDB = async () => {
         { name: "booking_refund_history" }
       );
 
-      console.log("Refund database indexes initialized");
+      console.log("Refund indexes initialized");
 
-      // =========================================
+      // ========================================
       // 5. FAVORITES INDEXES
-      // =========================================
+      // ========================================
 
       const favorites = database.collection("favorites");
 
@@ -134,11 +135,11 @@ export const connectDB = async () => {
         { name: "customer_favorites_history" }
       );
 
-      console.log("Favorites database indexes initialized");
+      console.log("Favorites indexes initialized");
 
-      // =========================================
+      // ========================================
       // 6. REVIEWS INDEXES
-      // =========================================
+      // ========================================
 
       const reviews = database.collection("reviews");
 
@@ -160,15 +161,13 @@ export const connectDB = async () => {
         { name: "customer_review_history" }
       );
 
-      console.log("Reviews database indexes initialized");
+      console.log("Reviews indexes initialized");
+
+      console.log("EQUIPORA database initialization completed");
 
       return database;
     } catch (error) {
-      console.error(
-        "MongoDB initialization failed:",
-        error.message
-      );
-
+      console.error("MongoDB initialization failed:", error);
       throw error;
     }
   })();
@@ -178,8 +177,13 @@ export const connectDB = async () => {
   try {
     return await connectionPromise;
   } catch (error) {
-    // Allow a future invocation to retry after initialization failure
-    delete globalForMongo.__equiporaMongoConnectPromise;
+    // Clear failed initialization so another invocation can retry
+    if (
+      globalForMongo.__equiporaMongoConnectPromise === connectionPromise
+    ) {
+      delete globalForMongo.__equiporaMongoConnectPromise;
+    }
+
     throw error;
   }
 };
@@ -189,18 +193,3 @@ export const connectDB = async () => {
 // ============================================
 
 export const getDB = () => database;
-
-// ============================================
-// 8. CLOSE DATABASE CONNECTION
-// ============================================
-
-// Do not call this after individual API requests.
-// Keep the connection alive for serverless reuse.
-export const closeDB = async () => {
-  await client.close();
-
-  delete globalForMongo.__equiporaMongoClient;
-  delete globalForMongo.__equiporaMongoConnectPromise;
-
-  console.log("MongoDB connection closed");
-};
