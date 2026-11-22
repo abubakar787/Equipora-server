@@ -11,6 +11,14 @@ export const auth = betterAuth({
   baseURL: env.betterAuthUrl,
   secret: env.betterAuthSecret,
   
+  // Social account linking
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["google", "github"],
+    },
+  },
+
 
   // MongoDB adapter
   database: mongodbAdapter(getDB(), {
