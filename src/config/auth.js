@@ -28,6 +28,7 @@ export const auth = betterAuth({
   // Trusted frontend origin
 trustedOrigins: [
   "https://equipora-client-gules.vercel.app",
+  "https://equipora-client-8xc091qfz-anas-tech-solutions.vercel.app",
   "http://localhost:3000",
 ],
 advanced: {
@@ -49,6 +50,14 @@ advanced: {
       allowDifferentEmails: false,
     },
   },
+
+  account: {
+  accountLinking: {
+    enabled: true,
+    trustedProviders: ["google", "github"],
+    allowDifferentEmails: false,
+  },
+},
   // Social authentication
   socialProviders: {
     google: {
