@@ -53,20 +53,22 @@ app.use(async (req, res, next) => {
 app.use(helmet());
 
 // Allow both local development and production frontend
+
 const allowedOrigins = [
   "http://localhost:3000",
-  env.clientUrl,
   "https://equipora-client-gules.vercel.app",
+  "https://equipora-client-8xc091qfz-anas-tech-solutions.vercel.app",
+  env.clientUrl,
 ].filter(Boolean);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests without an Origin header (e.g. server-to-server)
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
+      console.error("Blocked CORS origin:", origin);
       return callback(new Error(`CORS blocked this origin: ${origin}`));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -74,6 +76,7 @@ app.use(
     credentials: true,
   })
 );
+
 
 // Log HTTP requests during development
 if (env.nodeEnv === "development") {
