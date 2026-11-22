@@ -16,25 +16,53 @@ import categoryRoutes from "./modules/categories/category.routes.js";
 import bookingRoutes from "./modules/booking/booking.routes.js";
 import paymentRoutes from "./modules/payments/payment.routes.js";
 import { stripeWebhookController } from "./modules/payments/payment.controller.js";
-// Expense management routes
 import expenseRoutes from "./modules/expenses/expense.routes.js";
-// User profile and management routes
 import userRoutes from "./modules/users/user.routes.js";
-// Customer favorites routes
 import favoriteRoutes from "./modules/favorites/favorite.routes.js";
-// Equipment reviews and ratings routes
 import reviewRoutes from "./modules/reviews/review.routes.js";
-// Admin dashboard and analytics routes
 import adminRoutes from "./modules/admin/admin.routes.js";
 
-
-
-// Create the Express application before registering any routes
 const app = express();
 
- 
 // ============================================
-// DATABASE CONNECTION MIDDLEWARE
+// 1. CORS — MUST RUN BEFORE OTHER MIDDLEWARE
+// ============================================
+
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://equipora-client-gules.vercel.app",
+  "https://equipora-client-8xc091qfz-anas-tech-solutions.vercel.app",
+  env.clientUrl?.replace(/\/$/, ""),
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ""))) {
+      return callback(null, true);
+    }
+
+    console.error("Blocked CORS origin:", origin);
+    return callback(new Error(`CORS blocked this origin: ${origin}`));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+
+// ============================================
+// 2. SECURITY & LOGGING
+// ============================================
+
+app.use(helmet());
+
+if (env.nodeEnv === "development") {
+  app.use(morgan("dev"));
+}
+
+// ============================================
+// 3. DATABASE CONNECTION
 // ============================================
 
 app.use(async (req, res, next) => {
@@ -46,56 +74,19 @@ app.use(async (req, res, next) => {
     next(error);
   }
 });
-// ============================================
-// 1. SECURITY MIDDLEWARE
-// ============================================
-
-app.use(helmet());
-
-// Allow both local development and production frontend
-
-const allowedOrigins = [
-  "http://localhost:3000",
-  "https://equipora-client-gules.vercel.app",
-  "https://equipora-client-8xc091qfz-anas-tech-solutions.vercel.app",
-  env.clientUrl,
-].filter(Boolean);
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      console.error("Blocked CORS origin:", origin);
-      return callback(new Error(`CORS blocked this origin: ${origin}`));
-    },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-  })
-);
-
-
-// Log HTTP requests during development
-if (env.nodeEnv === "development") {
-  app.use(morgan("dev"));
-}
 
 // ============================================
-// 2. BETTER AUTH
+// 4. BETTER AUTH
+// Must run before express.json()
 // ============================================
 
-// Better Auth handler must run before express.json()
 app.all("/api/auth/*splat", toNodeHandler(auth));
 
 // ============================================
-// 3. STRIPE WEBHOOK
+// 5. STRIPE WEBHOOK
+// Raw body must be preserved
 // ============================================
 
-// Stripe requires the original raw request body for signature verification.
-// This route must be registered before express.json().
 app.post(
   "/api/payments/webhook",
   express.raw({ type: "application/json" }),
@@ -103,15 +94,15 @@ app.post(
 );
 
 // ============================================
-// 4. REQUEST BODY PARSER
+// 6. JSON BODY PARSER
 // ============================================
 
-// Parse JSON bodies for normal API requests
 app.use(express.json({ limit: "1mb" }));
 
 // ============================================
-// Application routes
-// Application routes
+// 7. APPLICATION ROUTES
+// ============================================
+
 app.use("/api/categories", categoryRoutes);
 app.use("/api/equipment", equipmentRoutes);
 app.use("/api/bookings", bookingRoutes);
@@ -119,14 +110,12 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/test", testRoutes);
-// Customer favorites endpoints
 app.use("/api/favorites", favoriteRoutes);
-// Equipment reviews endpoints
 app.use("/api/reviews", reviewRoutes);
-// Admin dashboard endpoints
 app.use("/api/admin", adminRoutes);
+
 // ============================================
-// 6. ROOT ROUTE
+// 8. ROOT ROUTE
 // ============================================
 
 app.get("/", (req, res) => {
@@ -137,7 +126,7 @@ app.get("/", (req, res) => {
 });
 
 // ============================================
-// 7. DATABASE HEALTH CHECK
+// 9. DATABASE HEALTH CHECK
 // ============================================
 
 app.get("/api/health", async (req, res, next) => {
@@ -156,7 +145,7 @@ app.get("/api/health", async (req, res, next) => {
 });
 
 // ============================================
-// 8. 404 HANDLER
+// 10. 404 HANDLER
 // ============================================
 
 app.use((req, res) => {
@@ -167,7 +156,7 @@ app.use((req, res) => {
 });
 
 // ============================================
-// 9. GLOBAL ERROR HANDLER
+// 11. GLOBAL ERROR HANDLER
 // ============================================
 
 app.use((error, req, res, next) => {
