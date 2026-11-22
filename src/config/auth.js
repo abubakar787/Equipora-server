@@ -43,13 +43,15 @@ advanced: {
     requireEmailVerification: false,
     minPasswordLength: 6,
   },
-  account: {
+    account: {
     accountLinking: {
       enabled: true,
       trustedProviders: ["google", "github"],
       allowDifferentEmails: false,
     },
   },
+
+  
 
   account: {
   accountLinking: {
