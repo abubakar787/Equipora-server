@@ -7,7 +7,7 @@ import morgan from "morgan";
 import { toNodeHandler } from "better-auth/node";
 
 import { env } from "./config/env.js";
-import { getDB } from "./config/db.js";
+import { getDB, connectDB } from "./config/db.js";
 import { auth } from "./config/auth.js";
 
 import testRoutes from "./routes/test.routes.js";
@@ -33,6 +33,19 @@ import adminRoutes from "./modules/admin/admin.routes.js";
 const app = express();
 
  
+// ============================================
+// DATABASE CONNECTION MIDDLEWARE
+// ============================================
+
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("Database connection failed:", error);
+    next(error);
+  }
+});
 // ============================================
 // 1. SECURITY MIDDLEWARE
 // ============================================
