@@ -10,6 +10,7 @@ export const auth = betterAuth({
   // Application configuration
   baseURL: env.betterAuthUrl,
   secret: env.betterAuthSecret,
+  
 
   // MongoDB adapter
   database: mongodbAdapter(getDB(), {
@@ -21,6 +22,12 @@ trustedOrigins: [
   "https://equipora-client-gules.vercel.app",
   "http://localhost:3000",
 ],
+advanced: {
+  defaultCookieAttributes: {
+    sameSite: "none",
+    secure: true,
+  },
+},
   // Email and password authentication
   emailAndPassword: {
     enabled: true,
