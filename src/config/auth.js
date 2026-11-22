@@ -17,8 +17,10 @@ export const auth = betterAuth({
   }),
 
   // Trusted frontend origin
-  trustedOrigins: [env.clientUrl],
-
+trustedOrigins: [
+  "https://equipora-client-gules.vercel.app",
+  "http://localhost:3000",
+],
   // Email and password authentication
   emailAndPassword: {
     enabled: true,

@@ -32,15 +32,30 @@ import adminRoutes from "./modules/admin/admin.routes.js";
 // Create the Express application before registering any routes
 const app = express();
 
+ 
 // ============================================
 // 1. SECURITY MIDDLEWARE
 // ============================================
 
 app.use(helmet());
 
+// Allow both local development and production frontend
+const allowedOrigins = [
+  "http://localhost:3000",
+  env.clientUrl,
+  "https://equipora-client-gules.vercel.app",
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: env.clientUrl,
+    origin: (origin, callback) => {
+      // Allow requests without an Origin header (e.g. server-to-server)
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked this origin: ${origin}`));
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
