@@ -28,28 +28,49 @@ const app = express();
 // 1. CORS — MUST RUN BEFORE OTHER MIDDLEWARE
 // ============================================
 
+
 const allowedOrigins = [
   "http://localhost:3000",
   "https://equipora-client-gules.vercel.app",
-  "https://equipora-client-8xc091qfz-anas-tech-solutions.vercel.app",
   env.clientUrl?.replace(/\/$/, ""),
 ].filter(Boolean);
 
+const isAllowedVercelPreview = (origin) => {
+  return /^https:\/\/equipora-client-[a-z0-9-]+-anas-tech-solutions\.vercel\.app$/i.test(
+    origin
+  );
+};
+
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ""))) {
+    // Allow requests without an Origin header (e.g. server-to-server)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const normalizedOrigin = origin.replace(/\/$/, "");
+
+    if (
+      allowedOrigins.includes(normalizedOrigin) ||
+      isAllowedVercelPreview(normalizedOrigin)
+    ) {
       return callback(null, true);
     }
 
     console.error("Blocked CORS origin:", origin);
+
     return callback(new Error(`CORS blocked this origin: ${origin}`));
   },
+
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+
   allowedHeaders: ["Content-Type", "Authorization"],
+
   credentials: true,
 };
 
 app.use(cors(corsOptions));
+
 
 // ============================================
 // 2. SECURITY & LOGGING
