@@ -1,4 +1,3 @@
-
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "@better-auth/mongo-adapter";
 import { jwt } from "better-auth/plugins";
@@ -10,40 +9,36 @@ export const auth = betterAuth({
   // Application configuration
   baseURL: env.betterAuthUrl,
   secret: env.betterAuthSecret,
-  
-  // Social account linking
-  account: {
-    accountLinking: {
-      enabled: true,
-      trustedProviders: ["google", "github"],
-    },
-  },
-
 
   // MongoDB adapter
   database: mongodbAdapter(getDB(), {
     client,
   }),
 
-  // Trusted frontend origin
-trustedOrigins: [
-  "https://equipora-client-gules.vercel.app",
-  "https://equipora-client-8xc091qfz-anas-tech-solutions.vercel.app",
-  "http://localhost:3000",
-],
-advanced: {
-  defaultCookieAttributes: {
-    sameSite: "none",
-    secure: true,
+  // Trusted frontend origins
+  trustedOrigins: [
+    "https://equipora-client-gules.vercel.app",
+    "https://equipora-client-8xc091qfz-anas-tech-solutions.vercel.app",
+    "http://localhost:3000",
+  ],
+
+  // Cross-origin cookie settings (required when frontend & backend are on separate Vercel domains)
+  advanced: {
+    defaultCookieAttributes: {
+      sameSite: "none",
+      secure: true,
+    },
   },
-},
+
   // Email and password authentication
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
     minPasswordLength: 6,
   },
-    account: {
+
+  // Social account linking
+  account: {
     accountLinking: {
       enabled: true,
       trustedProviders: ["google", "github"],
@@ -51,25 +46,32 @@ advanced: {
     },
   },
 
-  
-
-  account: {
-  accountLinking: {
-    enabled: true,
-    trustedProviders: ["google", "github"],
-    allowDifferentEmails: false,
-  },
-},
   // Social authentication
   socialProviders: {
     google: {
       clientId: env.googleClientId,
       clientSecret: env.googleClientSecret,
     },
-
     github: {
       clientId: env.githubClientId,
       clientSecret: env.githubClientSecret,
+      scope: ["user:email"],
+    },
+  },
+
+  // Auto-mark emailVerified on signup so OAuth linking works without email verification
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          return {
+            data: {
+              ...user,
+              emailVerified: true,
+            },
+          };
+        },
+      },
     },
   },
 
