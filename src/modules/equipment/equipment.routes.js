@@ -8,12 +8,12 @@ import {
   createEquipmentController,
   getAllEquipmentController,
   getEquipmentByIdController,
+  getOwnerEquipmentByIdController,
   updateEquipmentController,
   deleteEquipmentController,
   getMyEquipmentController,
   reviewEquipmentController,
   getPendingEquipmentController,
-  getOwnerEquipmentByIdController,
 } from "./equipment.controller.js";
 
 const router = express.Router();
@@ -22,15 +22,17 @@ const router = express.Router();
 // PUBLIC ROUTES
 // ============================================
 
-// Get all approved equipment
+// GET /api/equipment
 router.get("/", getAllEquipmentController);
 
+// GET /api/equipment/:id
+router.get("/:id", getEquipmentByIdController);
+
 // ============================================
-// AUTHENTICATED OWNER ROUTES
+// OWNER ROUTES
 // ============================================
 
-// Get my equipment
-// Keep this before /:id
+// GET /api/equipment/my-equipment
 router.get(
   "/my-equipment",
   verifyToken,
@@ -38,7 +40,16 @@ router.get(
   getMyEquipmentController
 );
 
-// Create equipment
+// GET /api/equipment/my-equipment/:id
+// Must be declared before any conflicting dynamic route.
+router.get(
+  "/my-equipment/:id",
+  verifyToken,
+  authorizeRole("owner", "admin"),
+  getOwnerEquipmentByIdController
+);
+
+// POST /api/equipment
 router.post(
   "/",
   verifyToken,
@@ -46,41 +57,7 @@ router.post(
   createEquipmentController
 );
 
-// ============================================
-// ADMIN ROUTES
-// ============================================
-
-// Get pending equipment
-// Keep this before /:id
-router.get(
-  "/admin/pending",
-  verifyToken,
-  authorizeRole("admin"),
-  getPendingEquipmentController
-);
-
-// Approve or reject equipment
-router.patch(
-  "/:id/review",
-  verifyToken,
-  authorizeRole("admin"),
-  reviewEquipmentController
-);
-
-router.get(
-  "/my-equipment/:id",
-  verifyToken,
-  authorizeRole("owner", "admin"),
-  getOwnerEquipmentByIdController
-);
-// ============================================
-// EQUIPMENT DETAILS
-// ============================================
-
-// Get equipment details
-router.get("/:id", getEquipmentByIdController);
-
-// Update equipment
+// PATCH /api/equipment/:id
 router.patch(
   "/:id",
   verifyToken,
@@ -88,12 +65,32 @@ router.patch(
   updateEquipmentController
 );
 
-// Delete equipment
+// DELETE /api/equipment/:id
 router.delete(
   "/:id",
   verifyToken,
   authorizeRole("owner"),
   deleteEquipmentController
+);
+
+// ============================================
+// ADMIN ROUTES
+// ============================================
+
+// GET /api/equipment/admin/pending
+router.get(
+  "/admin/pending",
+  verifyToken,
+  authorizeRole("admin"),
+  getPendingEquipmentController
+);
+
+// PATCH /api/equipment/:id/review
+router.patch(
+  "/:id/review",
+  verifyToken,
+  authorizeRole("admin"),
+  reviewEquipmentController
 );
 
 export default router;
