@@ -174,6 +174,7 @@ export const getEquipmentById = async (equipmentId) => {
   if (!ObjectId.isValid(equipmentId)) {
     return null;
   }
+  
 
   return getEquipmentCollection().findOne({
     _id: new ObjectId(equipmentId),
@@ -181,6 +182,25 @@ export const getEquipmentById = async (equipmentId) => {
     isDeleted: { $ne: true },
   });
 };
+// ============================================
+// OWNER: GET OWN EQUIPMENT BY ID
+// ============================================
+
+export const getOwnerEquipmentById = async (
+  equipmentId,
+  ownerId
+) => {
+  if (!ObjectId.isValid(equipmentId)) {
+    return null;
+  }
+
+  return getEquipmentCollection().findOne({
+    _id: new ObjectId(equipmentId),
+    ownerId,
+    isDeleted: { $ne: true },
+  });
+};
+
 
 // ============================================
 // 4. UPDATE EQUIPMENT

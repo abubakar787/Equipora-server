@@ -64,7 +64,7 @@ export const getAllEquipmentController = async (req, res) => {
 };
 
 // ============================================
-// 3. GET EQUIPMENT DETAILS BY ID
+// 3. GET EQUIPMENT DETAILS BY ID (PUBLIC)
 // ============================================
 
 export const getEquipmentByIdController = async (req, res) => {
@@ -87,7 +87,40 @@ export const getEquipmentByIdController = async (req, res) => {
 };
 
 // ============================================
-// 4. UPDATE EQUIPMENT
+// 4. OWNER: GET OWN EQUIPMENT DETAILS BY ID
+// ============================================
+
+export const getOwnerEquipmentByIdController = async (req, res) => {
+  try {
+    const equipment = await equipmentService.getOwnerEquipmentById(
+      req.params.id,
+      req.user.id
+    );
+
+    if (!equipment) {
+      return res.status(404).json({
+        success: false,
+        message: "Equipment not found or you are not the owner",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Equipment details retrieved successfully",
+      data: equipment,
+    });
+  } catch (error) {
+    console.error("Get owner equipment by ID error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve equipment",
+    });
+  }
+};
+
+// ============================================
+// 5. UPDATE EQUIPMENT
 // ============================================
 
 export const updateEquipmentController = async (req, res) => {
@@ -122,7 +155,7 @@ export const updateEquipmentController = async (req, res) => {
 };
 
 // ============================================
-// 5. DELETE EQUIPMENT
+// 6. DELETE EQUIPMENT
 // ============================================
 
 export const deleteEquipmentController = async (req, res) => {
@@ -145,7 +178,7 @@ export const deleteEquipmentController = async (req, res) => {
 };
 
 // ============================================
-// 6. OWNER: GET MY EQUIPMENT
+// 7. OWNER: GET MY EQUIPMENT
 // ============================================
 
 export const getMyEquipmentController = async (req, res) => {
@@ -173,7 +206,7 @@ export const getMyEquipmentController = async (req, res) => {
 };
 
 // ============================================
-// 7. ADMIN: APPROVE OR REJECT EQUIPMENT
+// 8. ADMIN: APPROVE OR REJECT EQUIPMENT
 // ============================================
 
 export const reviewEquipmentController = async (req, res) => {
@@ -208,7 +241,7 @@ export const reviewEquipmentController = async (req, res) => {
 };
 
 // ============================================
-// 8. ADMIN: GET PENDING EQUIPMENT
+// 9. ADMIN: GET PENDING EQUIPMENT
 // ============================================
 
 export const getPendingEquipmentController = async (req, res) => {

@@ -13,6 +13,7 @@ import {
   getMyEquipmentController,
   reviewEquipmentController,
   getPendingEquipmentController,
+  getOwnerEquipmentByIdController,
 } from "./equipment.controller.js";
 
 const router = express.Router();
@@ -66,6 +67,12 @@ router.patch(
   reviewEquipmentController
 );
 
+router.get(
+  "/my-equipment/:id",
+  verifyToken,
+  authorizeRole("owner", "admin"),
+  getOwnerEquipmentByIdController
+);
 // ============================================
 // EQUIPMENT DETAILS
 // ============================================
