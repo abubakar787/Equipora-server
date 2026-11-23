@@ -1,4 +1,3 @@
-
 import { randomUUID } from "node:crypto";
 import { ObjectId } from "mongodb";
 
@@ -47,10 +46,7 @@ export const createRefund = async (refundData, admin) => {
     throw new Error("Invalid original payment amount");
   }
 
-  if (
-    !Number.isSafeInteger(amountCents) ||
-    amountCents <= 0
-  ) {
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
     throw new Error("Invalid refund amount");
   }
 
@@ -86,13 +82,11 @@ export const createRefund = async (refundData, admin) => {
       $set: {
         updatedAt: new Date(),
       },
-    }
+    },
   );
 
   if (reservation.modifiedCount !== 1) {
-    throw new Error(
-      "Refund amount exceeds the remaining refundable balance"
-    );
+    throw new Error("Refund amount exceeds the remaining refundable balance");
   }
 
   let refundRecord;
@@ -149,9 +143,10 @@ export const createRefund = async (refundData, admin) => {
       },
       {
         idempotencyKey: requestId,
-      }
+      },
     );
 
+    // Save Stripe response
     // Save Stripe response
     await refunds.updateOne(
       { _id: refundRecord._id },
@@ -159,14 +154,16 @@ export const createRefund = async (refundData, admin) => {
         $set: {
           stripeRefundId: stripeRefund.id,
           stripeStatus: stripeRefund.status,
-          status: stripeRefund.status || "pending",
           updatedAt: new Date(),
         },
-      }
+      },
     );
 
     // Release reservation only if Stripe reports failure
-    if (stripeRefund.status === "failed" || stripeRefund.status === "canceled") {
+    if (
+      stripeRefund.status === "failed" ||
+      stripeRefund.status === "canceled"
+    ) {
       await payments.updateOne(
         { _id: payment._id },
         {
@@ -176,7 +173,7 @@ export const createRefund = async (refundData, admin) => {
           $set: {
             updatedAt: new Date(),
           },
-        }
+        },
       );
     }
 
@@ -207,7 +204,7 @@ export const createRefund = async (refundData, admin) => {
           $set: {
             updatedAt: new Date(),
           },
-        }
+        },
       );
     } else {
       // Keep the reservation until the Stripe result
@@ -219,7 +216,7 @@ export const createRefund = async (refundData, admin) => {
             errorMessage: error.message,
             updatedAt: new Date(),
           },
-        }
+        },
       );
     }
 
