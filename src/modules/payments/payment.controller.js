@@ -1,14 +1,10 @@
-
 import { ObjectId } from "mongodb";
 
 import { client, getDB } from "../../config/db.js";
 import { stripe } from "../../config/stripe.js";
 import { env } from "../../config/env.js";
 
-import {
-  createCheckoutSession,
-  getPaymentHistory,
-} from "./payment.service.js";
+import { createCheckoutSession, getPaymentHistory } from "./payment.service.js";
 
 import { calculateRentalCommission } from "./financial.service.js";
 
@@ -36,16 +32,14 @@ export const createCheckoutSessionController = async (req, res, next) => {
 // 2. FIND INTERNAL REFUND RECORD
 // ============================================
 
-const findRefundRecord = async (db, stripeRefund) => {
+const findRefundRecord = async (db, stripeRefund, session) => {
   const refunds = db.collection("refunds");
 
   const requestId = stripeRefund.metadata?.refundRequestId;
 
-  const query = requestId
-    ? { requestId }
-    : { stripeRefundId: stripeRefund.id };
+  const query = requestId ? { requestId } : { stripeRefundId: stripeRefund.id };
 
-  return refunds.findOne(query);
+  return refunds.findOne(query, { session });
 };
 
 // ============================================
@@ -73,9 +67,7 @@ const processSuccessfulRefund = async (stripeRefund) => {
         return;
       }
 
-      if (
-        ["failed", "canceled"].includes(refundRecord.status)
-      ) {
+      if (["failed", "canceled"].includes(refundRecord.status)) {
         throw new Error("A failed or canceled refund cannot succeed");
       }
 
@@ -85,7 +77,7 @@ const processSuccessfulRefund = async (stripeRefund) => {
 
       const payment = await payments.findOne(
         { _id: new ObjectId(refundRecord.paymentId) },
-        { session }
+        { session },
       );
 
       if (!payment) {
@@ -95,13 +87,9 @@ const processSuccessfulRefund = async (stripeRefund) => {
       const refundAmountCents = Number(stripeRefund.amount);
       const originalAmountCents = Number(payment.amountCents);
 
-      const originalCommissionCents = Number(
-        payment.commissionCents
-      );
+      const originalCommissionCents = Number(payment.commissionCents);
 
-      const originalOwnerEarningsCents = Number(
-        payment.ownerEarningsCents
-      );
+      const originalOwnerEarningsCents = Number(payment.ownerEarningsCents);
 
       if (
         !Number.isSafeInteger(refundAmountCents) ||
@@ -115,30 +103,23 @@ const processSuccessfulRefund = async (stripeRefund) => {
         throw new Error("Invalid refund or payment amounts");
       }
 
-      const previousRefundedAmount = Number(
-        payment.refundedAmountCents || 0
-      );
+      const previousRefundedAmount = Number(payment.refundedAmountCents || 0);
 
       const previousRefundedCommission = Number(
-        payment.refundedCommissionCents || 0
+        payment.refundedCommissionCents || 0,
       );
 
       const previousRefundedOwnerEarnings = Number(
-        payment.refundedOwnerEarningsCents || 0
+        payment.refundedOwnerEarningsCents || 0,
       );
 
-      const previousReservedAmount = Number(
-        payment.refundReservedCents || 0
-      );
+      const previousReservedAmount = Number(payment.refundReservedCents || 0);
 
-      if (
-        previousReservedAmount < refundAmountCents
-      ) {
+      if (previousReservedAmount < refundAmountCents) {
         throw new Error("Refund reservation is missing or insufficient");
       }
 
-      const newRefundedAmount =
-        previousRefundedAmount + refundAmountCents;
+      const newRefundedAmount = previousRefundedAmount + refundAmountCents;
 
       if (newRefundedAmount > originalAmountCents) {
         throw new Error("Refund exceeds original payment amount");
@@ -150,7 +131,7 @@ const processSuccessfulRefund = async (stripeRefund) => {
           ? originalCommissionCents
           : Math.round(
               (originalCommissionCents * newRefundedAmount) /
-                originalAmountCents
+                originalAmountCents,
             );
 
       const newRefundedOwnerEarnings =
@@ -158,11 +139,10 @@ const processSuccessfulRefund = async (stripeRefund) => {
           ? originalOwnerEarningsCents
           : Math.round(
               (originalOwnerEarningsCents * newRefundedAmount) /
-                originalAmountCents
+                originalAmountCents,
             );
 
-      const isFullyRefunded =
-        newRefundedAmount === originalAmountCents;
+      const isFullyRefunded = newRefundedAmount === originalAmountCents;
 
       // Conditional update protects against concurrent processing.
       const paymentUpdate = await payments.updateOne(
@@ -180,16 +160,13 @@ const processSuccessfulRefund = async (stripeRefund) => {
             refundedAmountCents: newRefundedAmount,
             refundedCommissionCents: newRefundedCommission,
             refundedOwnerEarningsCents: newRefundedOwnerEarnings,
-            refundReservedCents:
-              previousReservedAmount - refundAmountCents,
+            refundReservedCents: previousReservedAmount - refundAmountCents,
             refundStatus: isFullyRefunded ? "full" : "partial",
-            status: isFullyRefunded
-              ? "refunded"
-              : "partially_refunded",
+            status: isFullyRefunded ? "refunded" : "partially_refunded",
             updatedAt: new Date(),
           },
         },
-        { session }
+        { session },
       );
 
       if (paymentUpdate.modifiedCount !== 1) {
@@ -201,14 +178,12 @@ const processSuccessfulRefund = async (stripeRefund) => {
         { _id: payment.bookingId },
         {
           $set: {
-            paymentStatus: isFullyRefunded
-              ? "refunded"
-              : "partially_refunded",
+            paymentStatus: isFullyRefunded ? "refunded" : "partially_refunded",
             refundedAt: new Date(),
             updatedAt: new Date(),
           },
         },
-        { session }
+        { session },
       );
 
       if (bookingUpdate.matchedCount !== 1) {
@@ -229,7 +204,7 @@ const processSuccessfulRefund = async (stripeRefund) => {
             updatedAt: new Date(),
           },
         },
-        { session }
+        { session },
       );
 
       if (refundUpdate.modifiedCount !== 1) {
@@ -262,11 +237,7 @@ const processFailedRefund = async (stripeRefund) => {
         throw new Error(`Refund record not found: ${stripeRefund.id}`);
       }
 
-      if (
-        ["succeeded", "failed", "canceled"].includes(
-          refundRecord.status
-        )
-      ) {
+      if (["succeeded", "failed", "canceled"].includes(refundRecord.status)) {
         return;
       }
 
@@ -276,16 +247,14 @@ const processFailedRefund = async (stripeRefund) => {
 
       const payment = await payments.findOne(
         { _id: new ObjectId(refundRecord.paymentId) },
-        { session }
+        { session },
       );
 
       if (!payment) {
         throw new Error("Original payment not found");
       }
 
-      const reservedAmount = Number(
-        payment.refundReservedCents || 0
-      );
+      const reservedAmount = Number(payment.refundReservedCents || 0);
 
       const refundAmount = Number(refundRecord.amountCents);
 
@@ -301,10 +270,7 @@ const processFailedRefund = async (stripeRefund) => {
         {
           _id: payment._id,
           $expr: {
-            $gte: [
-              { $ifNull: ["$refundReservedCents", 0] },
-              refundAmount,
-            ],
+            $gte: [{ $ifNull: ["$refundReservedCents", 0] }, refundAmount],
           },
         },
         {
@@ -313,7 +279,7 @@ const processFailedRefund = async (stripeRefund) => {
             updatedAt: new Date(),
           },
         },
-        { session }
+        { session },
       );
 
       if (paymentUpdate.modifiedCount !== 1) {
@@ -333,7 +299,7 @@ const processFailedRefund = async (stripeRefund) => {
             updatedAt: new Date(),
           },
         },
-        { session }
+        { session },
       );
 
       if (refundUpdate.modifiedCount !== 1) {
@@ -365,7 +331,7 @@ export const stripeWebhookController = async (req, res) => {
     event = stripe.webhooks.constructEvent(
       req.body,
       signature,
-      env.stripeWebhookSecret
+      env.stripeWebhookSecret,
     );
   } catch (error) {
     console.error("Stripe signature verification failed:", error.message);
@@ -410,7 +376,7 @@ export const stripeWebhookController = async (req, res) => {
       }
 
       const financialBreakdown = await calculateRentalCommission(
-        Number(booking.totalAmount)
+        Number(booking.totalAmount),
       );
 
       const rentalAmountCents = financialBreakdown.rentalAmountCents;
@@ -434,7 +400,7 @@ export const stripeWebhookController = async (req, res) => {
               _id: booking._id,
               checkoutSessionId: stripeSession.id,
             },
-            { session: paymentSession }
+            { session: paymentSession },
           );
 
           if (!currentBooking) {
@@ -444,7 +410,7 @@ export const stripeWebhookController = async (req, res) => {
           // Duplicate webhook: payment already recorded.
           const existingPayment = await payments.findOne(
             { stripeSessionId: stripeSession.id },
-            { session: paymentSession }
+            { session: paymentSession },
           );
 
           if (existingPayment) {
@@ -468,12 +434,11 @@ export const stripeWebhookController = async (req, res) => {
                 currency: financialBreakdown.currency,
                 commissionRate: financialBreakdown.commissionRate,
                 commissionCents: financialBreakdown.commissionCents,
-                ownerEarningsCents:
-                  financialBreakdown.ownerEarningsCents,
+                ownerEarningsCents: financialBreakdown.ownerEarningsCents,
                 updatedAt: new Date(),
               },
             },
-            { session: paymentSession }
+            { session: paymentSession },
           );
 
           await payments.insertOne(
@@ -492,8 +457,7 @@ export const stripeWebhookController = async (req, res) => {
 
               commissionRate: financialBreakdown.commissionRate,
               commissionCents: financialBreakdown.commissionCents,
-              ownerEarningsCents:
-                financialBreakdown.ownerEarningsCents,
+              ownerEarningsCents: financialBreakdown.ownerEarningsCents,
 
               refundedAmountCents: 0,
               refundedCommissionCents: 0,
@@ -506,7 +470,7 @@ export const stripeWebhookController = async (req, res) => {
               paymentMethod: "card",
               createdAt: new Date(),
             },
-            { session: paymentSession }
+            { session: paymentSession },
           );
         });
       } finally {
@@ -531,7 +495,7 @@ export const stripeWebhookController = async (req, res) => {
             lastPaymentAttemptStatus: "failed",
             updatedAt: new Date(),
           },
-        }
+        },
       );
     }
 
@@ -553,7 +517,7 @@ export const stripeWebhookController = async (req, res) => {
             status: "expired",
             updatedAt: new Date(),
           },
-        }
+        },
       );
     }
 
@@ -561,10 +525,7 @@ export const stripeWebhookController = async (req, res) => {
     // 5D. REFUND CREATED / UPDATED
     // ============================================
 
-    if (
-      event.type === "refund.created" ||
-      event.type === "refund.updated"
-    ) {
+    if (event.type === "refund.created" || event.type === "refund.updated") {
       const stripeRefund = event.data.object;
 
       if (stripeRefund.status === "succeeded") {
