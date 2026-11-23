@@ -1,276 +1,444 @@
 
-import {
-  createEquipmentSchema,
-  updateEquipmentSchema,
-  equipmentQuerySchema,
-  myEquipmentQuerySchema,
-  equipmentReviewSchema,
-} from "./equipment.validation.js";
+import { ObjectId } from "mongodb";
+import { getDB } from "../../config/db.js";
 
-import * as equipmentService from "./equipment.service.js";
+// ============================================
+// COLLECTION
+// ============================================
+
+const getEquipmentCollection = () => {
+  return getDB().collection("equipment");
+};
+
+// ============================================
+// HELPER: ESCAPE REGEX
+// ============================================
+
+const escapeRegex = (value) => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
+// ============================================
+// HELPER: CONVERT AVAILABILITY DATES
+// ============================================
+
+const convertAvailabilityDates = (availability) => {
+  if (!availability) return undefined;
+
+  return {
+    availableFrom: new Date(
+      `${availability.availableFrom}T00:00:00.000Z`
+    ),
+
+    availableUntil: new Date(
+      `${availability.availableUntil}T23:59:59.999Z`
+    ),
+  };
+};
+
+// ============================================
+// HELPER: NORMALIZE MONGODB UPDATE RESULT
+// ============================================
+
+const getUpdatedDocument = (result) => {
+  if (!result) return null;
+
+  // Supports older MongoDB driver ModifyResult
+  // and newer MongoDB driver direct document response.
+  return result.value ?? result;
+};
 
 // ============================================
 // 1. CREATE EQUIPMENT
 // ============================================
 
-export const createEquipmentController = async (req, res) => {
-  const validation = createEquipmentSchema.safeParse(req.body);
+export const createEquipment = async (equipmentData, user) => {
+  const db = getDB();
 
-  if (!validation.success) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation failed",
-      errors: validation.error.flatten().fieldErrors,
-    });
+  // Check whether category exists and is active
+  const category = await db.collection("categories").findOne({
+    _id: new ObjectId(equipmentData.categoryId),
+    isActive: true,
+  });
+
+  if (!category) {
+    throw new Error("Invalid or inactive equipment category");
   }
 
-  const equipment = await equipmentService.createEquipment(
-    validation.data,
-    req.user
-  );
+  const equipment = {
+    ...equipmentData,
 
-  return res.status(201).json({
-    success: true,
-    message: "Equipment submitted successfully for approval",
-    data: equipment,
-  });
+    categoryId: category._id,
+    categoryName: category.name,
+
+    availability: convertAvailabilityDates(
+      equipmentData.availability
+    ),
+
+    ownerId: user.id,
+    ownerEmail: user.email,
+
+    status: "pending",
+    isAvailable: true,
+    isDeleted: false,
+
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  const result = await getEquipmentCollection().insertOne(equipment);
+
+  return {
+    ...equipment,
+    _id: result.insertedId,
+  };
 };
 
 // ============================================
 // 2. GET ALL APPROVED EQUIPMENT
 // ============================================
 
-export const getAllEquipmentController = async (req, res) => {
-  const validation = equipmentQuerySchema.safeParse(req.query);
+export const getAllEquipment = async (filters) => {
+  const collection = getEquipmentCollection();
 
-  if (!validation.success) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid query parameters",
-      errors: validation.error.flatten().fieldErrors,
-    });
+  const {
+    search,
+    category,
+    location,
+    sort,
+    page,
+    limit,
+  } = filters;
+
+  const query = {
+    status: "approved",
+    isAvailable: true,
+    isDeleted: { $ne: true },
+  };
+
+  // Search by title and description
+  if (search) {
+    const safeSearch = escapeRegex(search);
+
+    query.$or = [
+      {
+        title: {
+          $regex: safeSearch,
+          $options: "i",
+        },
+      },
+      {
+        description: {
+          $regex: safeSearch,
+          $options: "i",
+        },
+      },
+    ];
   }
 
-  const result = await equipmentService.getAllEquipment(
-    validation.data
-  );
+  // Filter by category
+  if (category) {
+    query.categoryId = new ObjectId(category);
+  }
 
-  return res.status(200).json({
-    success: true,
-    message: "Equipment retrieved successfully",
-    data: result.equipment,
-    pagination: result.pagination,
-  });
+  // Filter by location
+  if (location) {
+    query.location = {
+      $regex: escapeRegex(location),
+      $options: "i",
+    };
+  }
+
+  const sortOptions = {
+    newest: { createdAt: -1 },
+    price_asc: { price: 1 },
+    price_desc: { price: -1 },
+  };
+
+  const skip = (page - 1) * limit;
+
+  const [equipment, total] = await Promise.all([
+    collection
+      .find(query)
+      .sort(sortOptions[sort] || sortOptions.newest)
+      .skip(skip)
+      .limit(limit)
+      .toArray(),
+
+    collection.countDocuments(query),
+  ]);
+
+  return {
+    equipment,
+
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPrevPage: page > 1,
+    },
+  };
 };
 
 // ============================================
 // 3. GET EQUIPMENT DETAILS BY ID (PUBLIC)
 // ============================================
 
-export const getEquipmentByIdController = async (req, res) => {
-  const equipment = await equipmentService.getEquipmentById(
-    req.params.id
-  );
-
-  if (!equipment) {
-    return res.status(404).json({
-      success: false,
-      message: "Equipment not found",
-    });
+export const getEquipmentById = async (equipmentId) => {
+  if (!ObjectId.isValid(equipmentId)) {
+    return null;
   }
 
-  return res.status(200).json({
-    success: true,
-    message: "Equipment details retrieved successfully",
-    data: equipment,
+  return getEquipmentCollection().findOne({
+    _id: new ObjectId(equipmentId),
+    status: "approved",
+    isDeleted: { $ne: true },
   });
 };
 
 // ============================================
-// 4. OWNER: GET OWN EQUIPMENT DETAILS BY ID
+// 4. OWNER: GET OWN EQUIPMENT BY ID
 // ============================================
 
-export const getOwnerEquipmentByIdController = async (req, res) => {
-  try {
-    const equipment = await equipmentService.getOwnerEquipmentById(
-      req.params.id,
-      req.user.id
-    );
-
-    if (!equipment) {
-      return res.status(404).json({
-        success: false,
-        message: "Equipment not found or you are not the owner",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Equipment details retrieved successfully",
-      data: equipment,
-    });
-  } catch (error) {
-    console.error("Get owner equipment by ID error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to retrieve equipment",
-    });
+export const getOwnerEquipmentById = async (
+  equipmentId,
+  ownerId
+) => {
+  if (!ObjectId.isValid(equipmentId)) {
+    return null;
   }
+
+  return getEquipmentCollection().findOne({
+    _id: new ObjectId(equipmentId),
+    ownerId,
+    isDeleted: { $ne: true },
+  });
 };
 
 // ============================================
 // 5. UPDATE EQUIPMENT
 // ============================================
 
-export const updateEquipmentController = async (req, res) => {
-  const validation = updateEquipmentSchema.safeParse(req.body);
-
-  if (!validation.success) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation failed",
-      errors: validation.error.flatten().fieldErrors,
-    });
+export const updateEquipment = async (
+  equipmentId,
+  ownerId,
+  updateData
+) => {
+  if (!ObjectId.isValid(equipmentId)) {
+    return null;
   }
 
-  const equipment = await equipmentService.updateEquipment(
-    req.params.id,
-    req.user.id,
-    validation.data
+  const collection = getEquipmentCollection();
+
+  const data = { ...updateData };
+
+  // Validate updated category
+  if (data.categoryId) {
+    if (!ObjectId.isValid(data.categoryId)) {
+      return null;
+    }
+
+    const category = await getDB()
+      .collection("categories")
+      .findOne({
+        _id: new ObjectId(data.categoryId),
+        isActive: true,
+      });
+
+    if (!category) {
+      throw new Error("Invalid or inactive equipment category");
+    }
+
+    data.categoryId = category._id;
+    data.categoryName = category.name;
+  }
+
+  // Convert updated availability dates
+  if (data.availability) {
+    data.availability = convertAvailabilityDates(
+      data.availability
+    );
+  }
+
+  const result = await collection.findOneAndUpdate(
+    {
+      _id: new ObjectId(equipmentId),
+      ownerId,
+      isDeleted: { $ne: true },
+    },
+    {
+      $set: {
+        ...data,
+        status: "pending",
+        updatedAt: new Date(),
+      },
+    },
+    {
+      returnDocument: "after",
+    }
   );
 
-  if (!equipment) {
-    return res.status(404).json({
-      success: false,
-      message: "Equipment not found or you are not the owner",
-    });
-  }
-
-  return res.status(200).json({
-    success: true,
-    message: "Equipment updated and submitted for approval",
-    data: equipment,
-  });
+  return getUpdatedDocument(result);
 };
 
 // ============================================
-// 6. DELETE EQUIPMENT
+// 6. DELETE EQUIPMENT (SOFT DELETE)
 // ============================================
 
-export const deleteEquipmentController = async (req, res) => {
-  const equipment = await equipmentService.deleteEquipment(
-    req.params.id,
-    req.user.id
-  );
-
-  if (!equipment) {
-    return res.status(404).json({
-      success: false,
-      message: "Equipment not found or you are not the owner",
-    });
+export const deleteEquipment = async (
+  equipmentId,
+  ownerId
+) => {
+  if (!ObjectId.isValid(equipmentId)) {
+    return null;
   }
 
-  return res.status(200).json({
-    success: true,
-    message: "Equipment deleted successfully",
-  });
+  const result = await getEquipmentCollection().findOneAndUpdate(
+    {
+      _id: new ObjectId(equipmentId),
+      ownerId,
+      isDeleted: { $ne: true },
+    },
+    {
+      $set: {
+        isDeleted: true,
+        isAvailable: false,
+        updatedAt: new Date(),
+        deletedAt: new Date(),
+      },
+    },
+    {
+      returnDocument: "after",
+    }
+  );
+
+  return getUpdatedDocument(result);
 };
 
 // ============================================
 // 7. OWNER: GET MY EQUIPMENT
 // ============================================
 
-export const getMyEquipmentController = async (req, res) => {
-  const validation = myEquipmentQuerySchema.safeParse(req.query);
+export const getMyEquipment = async (ownerId, filters) => {
+  const collection = getEquipmentCollection();
 
-  if (!validation.success) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid query parameters",
-      errors: validation.error.flatten().fieldErrors,
-    });
+  const {
+    page,
+    limit,
+    status,
+  } = filters;
+
+  // Exclude soft-deleted equipment
+  const query = {
+    ownerId,
+    isDeleted: { $ne: true },
+  };
+
+  // Optional status filter
+  if (status && status !== "all") {
+    query.status = status;
   }
 
-  const result = await equipmentService.getMyEquipment(
-    req.user.id,
-    validation.data
-  );
+  const skip = (page - 1) * limit;
 
-  return res.status(200).json({
-    success: true,
-    message: "Your equipment retrieved successfully",
-    data: result.equipment,
-    pagination: result.pagination,
-  });
+  const [equipment, total] = await Promise.all([
+    collection
+      .find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray(),
+
+    collection.countDocuments(query),
+  ]);
+
+  return {
+    equipment,
+
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPrevPage: page > 1,
+    },
+  };
 };
 
 // ============================================
 // 8. ADMIN: APPROVE OR REJECT EQUIPMENT
 // ============================================
 
-export const reviewEquipmentController = async (req, res) => {
-  const validation = equipmentReviewSchema.safeParse(req.body);
-
-  if (!validation.success) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid review information",
-      errors: validation.error.flatten().fieldErrors,
-    });
+export const reviewEquipment = async (
+  equipmentId,
+  adminId,
+  reviewData
+) => {
+  if (!ObjectId.isValid(equipmentId)) {
+    return null;
   }
 
-  const equipment = await equipmentService.reviewEquipment(
-    req.params.id,
-    req.user.id,
-    validation.data
+  const result = await getEquipmentCollection().findOneAndUpdate(
+    {
+      _id: new ObjectId(equipmentId),
+      status: "pending",
+      isDeleted: { $ne: true },
+    },
+    {
+      $set: {
+        status: reviewData.status,
+        reviewNote: reviewData.reviewNote || "",
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    },
+    {
+      returnDocument: "after",
+    }
   );
 
-  if (!equipment) {
-    return res.status(404).json({
-      success: false,
-      message: "Pending equipment not found",
-    });
-  }
-
-  return res.status(200).json({
-    success: true,
-    message: `Equipment ${validation.data.status} successfully`,
-    data: equipment,
-  });
+  return getUpdatedDocument(result);
 };
 
 // ============================================
 // 9. ADMIN: GET PENDING EQUIPMENT
 // ============================================
 
-export const getPendingEquipmentController = async (req, res) => {
-  const page = Number(req.query.page) || 1;
-  const limit = Number(req.query.limit) || 10;
+export const getPendingEquipment = async (page, limit) => {
+  const collection = getEquipmentCollection();
 
-  if (
-    !Number.isInteger(page) ||
-    !Number.isInteger(limit) ||
-    page < 1 ||
-    limit < 1
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid pagination parameters",
-    });
-  }
+  const query = {
+    status: "pending",
+    isDeleted: { $ne: true },
+  };
 
-  const safeLimit = Math.min(limit, 24);
+  const skip = (page - 1) * limit;
 
-  const result = await equipmentService.getPendingEquipment(
-    page,
-    safeLimit
-  );
+  const [equipment, total] = await Promise.all([
+    collection
+      .find(query)
+      .sort({ createdAt: 1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray(),
 
-  return res.status(200).json({
-    success: true,
-    message: "Pending equipment retrieved successfully",
-    data: result.equipment,
-    pagination: result.pagination,
-  });
+    collection.countDocuments(query),
+  ]);
+
+  return {
+    equipment,
+
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPrevPage: page > 1,
+    },
+  };
 };
