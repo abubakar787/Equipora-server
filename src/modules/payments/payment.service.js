@@ -28,13 +28,8 @@ const savePaymentDeadline = async (
     {
       $set: {
         checkoutSessionId: sessionId,
-
-        // New payment deadline field
         paymentExpiresAt,
-
-        // Backward compatibility
         expiresAt: paymentExpiresAt,
-
         updatedAt: new Date(),
       },
     }
@@ -64,7 +59,6 @@ export const createCheckoutSession = async (
   const now = new Date();
 
   // 1. Find an approved, unpaid booking.
-  // Prefer paymentExpiresAt; support legacy records using expiresAt.
   const booking = await bookings.findOne({
     _id: bookingObjectId,
     customerId: customer.id,
@@ -88,7 +82,7 @@ export const createCheckoutSession = async (
     );
   }
 
-  // 2. Reuse an existing open Stripe Checkout Session
+  // 2. Reuse an existing open Stripe Checkout Session.
   if (booking.checkoutSessionId) {
     const existingSession =
       await stripe.checkout.sessions.retrieve(
@@ -121,8 +115,8 @@ export const createCheckoutSession = async (
       }
     }
 
-    // Do not create a duplicate session while an existing
-    // completed session is still being processed.
+    // Prevent duplicate sessions while completed
+    // payment is being processed.
     if (existingSession.status === "complete") {
       throw new Error(
         "This payment session has already been completed. Please refresh your bookings."
@@ -130,7 +124,7 @@ export const createCheckoutSession = async (
     }
   }
 
-  // 3. Calculate amount from trusted database data
+  // 3. Calculate amount from trusted database data.
   const amountInCents = Math.round(
     Number(booking.totalAmount) * 100
   );
@@ -152,11 +146,12 @@ export const createCheckoutSession = async (
     expiresAtSeconds * 1000
   );
 
-  // 5. Create Stripe Checkout Session
+  // 5. Create Stripe Checkout Session.
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
 
-    payment_method_types: ["card"],
+    // Updated for the current Stripe API version.
+    allowed_payment_method_types: ["card"],
 
     line_items: [
       {
@@ -190,7 +185,7 @@ export const createCheckoutSession = async (
     expires_at: expiresAtSeconds,
   });
 
-  // 6. Save Stripe session and payment deadline
+  // 6. Save Stripe session and payment deadline.
   try {
     await savePaymentDeadline(
       bookings,
@@ -199,8 +194,7 @@ export const createCheckoutSession = async (
       paymentExpiresAt
     );
   } catch (error) {
-    // Prevent an orphaned open Checkout Session if the
-    // booking changed before its session reference was saved.
+    // Prevent an orphaned open Checkout Session.
     try {
       await stripe.checkout.sessions.expire(session.id);
     } catch {
@@ -225,17 +219,17 @@ export const getPaymentHistory = async (user) => {
 
   let query = {};
 
-  // Customers can see only their own payments
+  // Customers can see only their own payments.
   if (user.role === "customer") {
     query.customerId = user.id;
   }
 
-  // Owners can see payments for their equipment
+  // Owners can see payments for their equipment.
   else if (user.role === "owner") {
     query.ownerId = user.id;
   }
 
-  // Admins can see all platform payments
+  // Admins can see all platform payments.
   else if (user.role !== "admin") {
     throw new Error(
       "You are not allowed to view payment history"
