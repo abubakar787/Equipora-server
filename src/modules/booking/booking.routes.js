@@ -10,6 +10,7 @@ import {
   getBookingByIdController,
   cancelBookingController,
   getOwnerBookingsController,
+  getAdminBookingsController,
   updateOwnerBookingStatusController,
   completeBookingController,
   requestBookingExtensionController,
@@ -23,7 +24,6 @@ const router = express.Router();
 // CUSTOMER ROUTES
 // ============================================
 
-// Create booking
 router.post(
   "/",
   verifyToken,
@@ -31,7 +31,6 @@ router.post(
   createBookingController
 );
 
-// Get customer's bookings
 router.get(
   "/my-bookings",
   verifyToken,
@@ -40,11 +39,21 @@ router.get(
 );
 
 // ============================================
-// OWNER / ADMIN ROUTES
-// IMPORTANT: Keep these before GET /:id
+// ADMIN ROUTES
+// Keep before GET /:id
 // ============================================
 
-// Get received bookings
+router.get(
+  "/admin-bookings",
+  verifyToken,
+  authorizeRole("admin"),
+  getAdminBookingsController
+);
+
+// ============================================
+// OWNER ROUTES
+// ============================================
+
 router.get(
   "/owner-bookings",
   verifyToken,
@@ -52,7 +61,6 @@ router.get(
   getOwnerBookingsController
 );
 
-// Owner approves or rejects booking
 router.patch(
   "/:id/owner-review",
   verifyToken,
@@ -60,7 +68,6 @@ router.patch(
   updateOwnerBookingStatusController
 );
 
-// Owner or Admin extends review deadline
 router.patch(
   "/:id/extend-deadline",
   verifyToken,
@@ -68,7 +75,6 @@ router.patch(
   extendBookingDeadlineController
 );
 
-// Owner or Admin reviews extension request
 router.patch(
   "/:id/extension-requests/:requestId/review",
   verifyToken,
@@ -76,7 +82,6 @@ router.patch(
   reviewBookingExtensionController
 );
 
-// Owner completes rental
 router.patch(
   "/:id/complete",
   verifyToken,
@@ -88,7 +93,6 @@ router.patch(
 // CUSTOMER BOOKING ACTIONS
 // ============================================
 
-// Customer requests deadline extension
 router.post(
   "/:id/extension-request",
   verifyToken,
@@ -96,7 +100,6 @@ router.post(
   requestBookingExtensionController
 );
 
-// Customer cancels booking
 router.patch(
   "/:id/cancel",
   verifyToken,
@@ -105,11 +108,9 @@ router.patch(
 );
 
 // ============================================
-// DYNAMIC CUSTOMER ROUTE
-// MUST BE LAST AMONG GET ROUTES
+// DYNAMIC ROUTE — KEEP LAST
 // ============================================
 
-// Get a specific customer booking
 router.get(
   "/:id",
   verifyToken,

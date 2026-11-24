@@ -620,6 +620,309 @@ export const completeBooking = async (bookingId, ownerId) => {
 };
 
 // ============================================
+// ADMIN: GET ALL BOOKINGS
+// ============================================
+
+const escapeRegex = (value = "") =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+export const getAdminBookings = async (filters = {}) => {
+  const bookingsCollection = getBookingCollection();
+
+  const page = Math.max(Number(filters.page) || 1, 1);
+  const limit = Math.min(
+    Math.max(Number(filters.limit) || 10, 1),
+    50
+  );
+
+  const skip = (page - 1) * limit;
+
+  // Map frontend status to actual database status.
+  const statusMap = {
+    pending: "pending_payment",
+    approved: "approved_for_payment",
+    confirmed: "confirmed",
+    rejected: "rejected",
+    cancelled: "cancelled",
+    completed: "completed",
+  };
+
+  const match = {};
+
+  if (filters.status) {
+    const dbStatus = statusMap[filters.status] || filters.status;
+    match.status = dbStatus;
+  }
+
+  if (filters.paymentStatus) {
+    if (filters.paymentStatus === "pending") {
+      match.paymentStatus = { $in: ["pending", "unpaid"] };
+    } else {
+      match.paymentStatus = filters.paymentStatus;
+    }
+  }
+
+  const pipeline = [
+    { $match: match },
+
+    // Customer information
+    {
+      $lookup: {
+        from: "user",
+        let: { lookupId: "$customerId" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $or: [
+                  { $eq: ["$id", "$$lookupId"] },
+                  {
+                    $eq: [
+                      { $toString: "$_id" },
+                      "$$lookupId",
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          {
+            $project: {
+              name: 1,
+              email: 1,
+              image: 1,
+            },
+          },
+          { $limit: 1 },
+        ],
+        as: "customerData",
+      },
+    },
+
+    // Owner information
+    {
+      $lookup: {
+        from: "user",
+        let: { lookupId: "$ownerId" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $or: [
+                  { $eq: ["$id", "$$lookupId"] },
+                  {
+                    $eq: [
+                      { $toString: "$_id" },
+                      "$$lookupId",
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          {
+            $project: {
+              name: 1,
+              email: 1,
+            },
+          },
+          { $limit: 1 },
+        ],
+        as: "ownerData",
+      },
+    },
+
+    // Equipment information
+    {
+      $lookup: {
+        from: "equipment",
+        localField: "equipmentId",
+        foreignField: "_id",
+        as: "equipmentData",
+      },
+    },
+
+    {
+      $addFields: {
+        customer: {
+          $ifNull: [
+            { $arrayElemAt: ["$customerData", 0] },
+            {
+              name: "$contactName",
+              email: "$customerEmail",
+            },
+          ],
+        },
+
+        owner: {
+          $ifNull: [
+            { $arrayElemAt: ["$ownerData", 0] },
+            {
+              name: "Owner",
+              email: "",
+            },
+          ],
+        },
+
+        equipmentRecord: {
+          $arrayElemAt: ["$equipmentData", 0],
+        },
+      },
+    },
+
+    // Search after customer, owner and equipment lookup.
+    ...(filters.search
+      ? [
+          {
+            $match: {
+              $or: [
+                {
+                  equipmentTitle: {
+                    $regex: escapeRegex(filters.search),
+                    $options: "i",
+                  },
+                },
+                {
+                  "customer.name": {
+                    $regex: escapeRegex(filters.search),
+                    $options: "i",
+                  },
+                },
+                {
+                  "customer.email": {
+                    $regex: escapeRegex(filters.search),
+                    $options: "i",
+                  },
+                },
+                {
+                  "owner.name": {
+                    $regex: escapeRegex(filters.search),
+                    $options: "i",
+                  },
+                },
+                {
+                  "owner.email": {
+                    $regex: escapeRegex(filters.search),
+                    $options: "i",
+                  },
+                },
+                {
+                  "equipmentRecord.title": {
+                    $regex: escapeRegex(filters.search),
+                    $options: "i",
+                  },
+                },
+                {
+                  "equipmentRecord.name": {
+                    $regex: escapeRegex(filters.search),
+                    $options: "i",
+                  },
+                },
+              ],
+            },
+          },
+        ]
+      : []),
+
+    // Frontend-compatible fields
+    {
+      $addFields: {
+        bookingStatus: {
+          $switch: {
+            branches: [
+              {
+                case: { $eq: ["$status", "pending_payment"] },
+                then: "pending",
+              },
+              {
+                case: { $eq: ["$status", "approved_for_payment"] },
+                then: "approved",
+              },
+              {
+                case: { $eq: ["$status", "active"] },
+                then: "confirmed",
+              },
+            ],
+            default: "$status",
+          },
+        },
+
+        startDate: "$startAt",
+        endDate: "$endAt",
+
+        equipment: {
+          _id: "$equipmentId",
+          name: {
+            $ifNull: [
+              "$equipmentRecord.title",
+              "$equipmentTitle",
+            ],
+          },
+          title: {
+            $ifNull: [
+              "$equipmentRecord.title",
+              "$equipmentTitle",
+            ],
+          },
+          image: {
+            $ifNull: [
+              { $arrayElemAt: ["$equipmentRecord.images", 0] },
+              "$equipmentImage",
+            ],
+          },
+          location: "$equipmentRecord.location",
+        },
+
+        totalPrice: "$totalAmount",
+        amount: "$totalAmount",
+      },
+    },
+
+    { $sort: { createdAt: -1, _id: -1 } },
+
+    {
+      $facet: {
+        bookings: [
+          { $skip: skip },
+          { $limit: limit },
+          {
+            $project: {
+              customerData: 0,
+              ownerData: 0,
+              equipmentData: 0,
+              equipmentRecord: 0,
+            },
+          },
+        ],
+
+        pagination: [
+          { $count: "total" },
+        ],
+      },
+    },
+  ];
+
+  const [result] = await bookingsCollection
+    .aggregate(pipeline)
+    .toArray();
+
+  const bookings = result?.bookings || [];
+  const total = result?.pagination?.[0]?.total || 0;
+
+  return {
+    bookings,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPrevPage: page > 1,
+    },
+  };
+};
+
+// ============================================
 // BOOKING EXTENSION HELPERS
 // ============================================
 

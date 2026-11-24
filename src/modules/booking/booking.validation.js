@@ -42,9 +42,36 @@ export const createBookingSchema = z
     }
   );
 
-// Validate booking list filters and pagination
+// Customer and Owner booking list filters
 export const bookingQuerySchema = z.object({
   status: z.enum(BOOKING_STATUSES).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(24).default(10),
+});
+
+// Admin booking filters
+// Frontend sends: pending, approved, confirmed, etc.
+export const adminBookingQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+
+  status: z.enum([
+    "pending",
+    "approved",
+    "confirmed",
+    "rejected",
+    "cancelled",
+    "completed",
+    ...BOOKING_STATUSES,
+  ]).optional(),
+
+  paymentStatus: z.enum([
+    "paid",
+    "pending",
+    "unpaid",
+    "failed",
+    "refunded",
+  ]).optional(),
+
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(10),
 });

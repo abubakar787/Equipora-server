@@ -2,6 +2,7 @@
 import {
   createBookingSchema,
   bookingQuerySchema,
+  adminBookingQuerySchema,
 } from "./booking.validation.js";
 
 import * as bookingService from "./booking.service.js";
@@ -144,6 +145,42 @@ export const getOwnerBookingsController = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "Owner bookings retrieved successfully",
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// ============================================
+// ADMIN: GET ALL BOOKINGS
+// ============================================
+
+export const getAdminBookingsController = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const validation = adminBookingQuerySchema.safeParse(
+      req.query
+    );
+
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid admin booking filters",
+        errors: validation.error.flatten().fieldErrors,
+      });
+    }
+
+    const result = await bookingService.getAdminBookings(
+      validation.data
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "All bookings retrieved successfully",
       data: result,
     });
   } catch (error) {
