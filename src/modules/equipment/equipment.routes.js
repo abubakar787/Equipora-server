@@ -25,11 +25,9 @@ const router = express.Router();
 // GET /api/equipment
 router.get("/", getAllEquipmentController);
 
-// GET /api/equipment/:id
-router.get("/:id", getEquipmentByIdController);
-
 // ============================================
 // OWNER ROUTES
+// Specific routes MUST come before /:id
 // ============================================
 
 // GET /api/equipment/my-equipment
@@ -41,7 +39,6 @@ router.get(
 );
 
 // GET /api/equipment/my-equipment/:id
-// Must be declared before any conflicting dynamic route.
 router.get(
   "/my-equipment/:id",
   verifyToken,
@@ -55,22 +52,6 @@ router.post(
   verifyToken,
   authorizeRole("owner", "admin"),
   createEquipmentController
-);
-
-// PATCH /api/equipment/:id
-router.patch(
-  "/:id",
-  verifyToken,
-  authorizeRole("owner", "admin"),
-  updateEquipmentController
-);
-
-// DELETE /api/equipment/:id
-router.delete(
-  "/:id",
-  verifyToken,
-  authorizeRole("owner"),
-  deleteEquipmentController
 );
 
 // ============================================
@@ -91,6 +72,30 @@ router.patch(
   verifyToken,
   authorizeRole("admin"),
   reviewEquipmentController
+);
+
+// ============================================
+// DYNAMIC EQUIPMENT ROUTES
+// Keep these AFTER specific GET routes
+// ============================================
+
+// GET /api/equipment/:id
+router.get("/:id", getEquipmentByIdController);
+
+// PATCH /api/equipment/:id
+router.patch(
+  "/:id",
+  verifyToken,
+  authorizeRole("owner", "admin"),
+  updateEquipmentController
+);
+
+// DELETE /api/equipment/:id
+router.delete(
+  "/:id",
+  verifyToken,
+  authorizeRole("owner"),
+  deleteEquipmentController
 );
 
 export default router;
