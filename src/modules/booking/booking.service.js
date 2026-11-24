@@ -1,10 +1,21 @@
+
 import { ObjectId } from "mongodb";
 import { getDB } from "../../config/db.js";
 
 const getBookingCollection = () => getDB().collection("bookings");
 const getEquipmentCollection = () => getDB().collection("equipment");
 
-const RESERVATION_MINUTES = 15;
+// Booking lifecycle configuration
+const OWNER_REVIEW_HOURS = 72;
+
+// Stripe Checkout currently uses a 31-minute session.
+const PAYMENT_RESERVATION_MINUTES = 31;
+
+const OWNER_REVIEW_DURATION_MS =
+  OWNER_REVIEW_HOURS * 60 * 60 * 1000;
+
+const PAYMENT_RESERVATION_DURATION_MS =
+  PAYMENT_RESERVATION_MINUTES * 60 * 1000;
 
 const RENTAL_UNIT_MS = {
   hourly: 60 * 60 * 1000,
@@ -20,8 +31,17 @@ const calculateRentalUnits = (startAt, endAt, rentalType) => {
     throw new Error("Invalid rental type");
   }
 
-  return Math.ceil((endAt.getTime() - startAt.getTime()) / unit);
+  return Math.ceil(
+    (endAt.getTime() - startAt.getTime()) / unit
+  );
 };
+
+// Backward-compatible deadline helpers
+const getOwnerReviewDeadline = (booking) =>
+  booking.ownerReviewExpiresAt || booking.expiresAt;
+
+const getPaymentDeadline = (booking) =>
+  booking.paymentExpiresAt || booking.expiresAt;
 
 // ============================================
 // CREATE BOOKING
@@ -152,7 +172,7 @@ export const createBooking = async (bookingData, customer) => {
     throw new Error("Invalid rental duration");
   }
 
-  // 7. Find overlapping bookings
+  // 7. Find overlapping active reservations
   const overlappingBookings = await bookingCollection
     .aggregate([
       {
@@ -160,18 +180,41 @@ export const createBooking = async (bookingData, customer) => {
           equipmentId: equipment._id,
           startAt: { $lt: requestedEnd },
           endAt: { $gt: requestedStart },
+
           $or: [
-            {
-              status: { $in: ["confirmed", "active"] },
-            },
+            // Confirmed and active bookings always reserve stock
             {
               status: {
-                $in: [
-                  "pending_payment",
-                  "approved_for_payment",
-                ],
+                $in: ["confirmed", "active"],
               },
-              expiresAt: { $gt: now },
+            },
+
+            // Pending owner review: 72-hour deadline
+            {
+              status: "pending_payment",
+              $or: [
+                {
+                  ownerReviewExpiresAt: { $gt: now },
+                },
+                {
+                  ownerReviewExpiresAt: { $exists: false },
+                  expiresAt: { $gt: now },
+                },
+              ],
+            },
+
+            // Approved bookings: payment deadline
+            {
+              status: "approved_for_payment",
+              $or: [
+                {
+                  paymentExpiresAt: { $gt: now },
+                },
+                {
+                  paymentExpiresAt: { $exists: false },
+                  expiresAt: { $gt: now },
+                },
+              ],
             },
           ],
         },
@@ -179,7 +222,9 @@ export const createBooking = async (bookingData, customer) => {
       {
         $group: {
           _id: null,
-          bookedQuantity: { $sum: "$quantity" },
+          bookedQuantity: {
+            $sum: "$quantity",
+          },
         },
       },
     ])
@@ -193,7 +238,10 @@ export const createBooking = async (bookingData, customer) => {
 
   if (quantity > availableQuantity) {
     throw new Error(
-      `Only ${Math.max(availableQuantity, 0)} unit(s) available for the selected period`
+      `Only ${Math.max(
+        availableQuantity,
+        0
+      )} unit(s) available for the selected period`
     );
   }
 
@@ -204,9 +252,9 @@ export const createBooking = async (bookingData, customer) => {
     throw new Error("Unable to calculate booking price");
   }
 
-  // 9. Create temporary reservation
-  const expiresAt = new Date(
-    now.getTime() + RESERVATION_MINUTES * 60 * 1000
+  // 9. Create 72-hour owner review deadline
+  const ownerReviewExpiresAt = new Date(
+    now.getTime() + OWNER_REVIEW_DURATION_MS
   );
 
   const booking = {
@@ -234,10 +282,23 @@ export const createBooking = async (bookingData, customer) => {
     deliveryAddress,
     notes,
 
+    // Booking lifecycle
     status: "pending_payment",
-    expiresAt,
-
     paymentStatus: "unpaid",
+
+    // Owner review deadline
+    ownerReviewExpiresAt,
+
+    // Payment deadline starts only after owner approval
+    paymentExpiresAt: null,
+
+    // Backward compatibility with existing services
+    expiresAt: ownerReviewExpiresAt,
+
+    // Extension workflow preparation
+    extensionRequests: [],
+    extensionHistory: [],
+    extensionCount: 0,
 
     createdAt: now,
     updatedAt: now,
@@ -259,6 +320,7 @@ export const getMyBookings = async (customerId, filters = {}) => {
   const collection = getBookingCollection();
 
   const page = Math.max(Number(filters.page) || 1, 1);
+
   const limit = Math.min(
     Math.max(Number(filters.limit) || 10, 1),
     24
@@ -326,11 +388,42 @@ export const cancelBooking = async (bookingId, customerId) => {
     {
       _id: new ObjectId(bookingId),
       customerId,
+
       status: {
         $in: ["pending_payment", "approved_for_payment"],
       },
+
       paymentStatus: "unpaid",
-      expiresAt: { $gt: now },
+
+      $or: [
+        // Pending owner review
+        {
+          status: "pending_payment",
+          $or: [
+            {
+              ownerReviewExpiresAt: { $gt: now },
+            },
+            {
+              ownerReviewExpiresAt: { $exists: false },
+              expiresAt: { $gt: now },
+            },
+          ],
+        },
+
+        // Approved and waiting for payment
+        {
+          status: "approved_for_payment",
+          $or: [
+            {
+              paymentExpiresAt: { $gt: now },
+            },
+            {
+              paymentExpiresAt: { $exists: false },
+              expiresAt: { $gt: now },
+            },
+          ],
+        },
+      ],
     },
     {
       $set: {
@@ -353,6 +446,7 @@ export const getOwnerBookings = async (ownerId, filters = {}) => {
   const collection = getBookingCollection();
 
   const page = Math.max(Number(filters.page) || 1, 1);
+
   const limit = Math.min(
     Math.max(Number(filters.limit) || 10, 1),
     24
@@ -417,12 +511,29 @@ export const updateOwnerBookingStatus = async (
 
   const now = new Date();
 
+  // Start a separate payment deadline after approval.
+  const paymentExpiresAt =
+    action === "approve"
+      ? new Date(
+          now.getTime() + PAYMENT_RESERVATION_DURATION_MS
+        )
+      : null;
+
   return getBookingCollection().findOneAndUpdate(
     {
       _id: new ObjectId(bookingId),
       ownerId,
       status: "pending_payment",
-      expiresAt: { $gt: now },
+
+      $or: [
+        {
+          ownerReviewExpiresAt: { $gt: now },
+        },
+        {
+          ownerReviewExpiresAt: { $exists: false },
+          expiresAt: { $gt: now },
+        },
+      ],
     },
     {
       $set: {
@@ -430,6 +541,14 @@ export const updateOwnerBookingStatus = async (
         ownerReviewNote: reviewNote,
         ownerReviewedAt: now,
         updatedAt: now,
+
+        ...(action === "approve"
+          ? {
+              paymentExpiresAt,
+              // Legacy compatibility for existing payment service
+              expiresAt: paymentExpiresAt,
+            }
+          : {}),
       },
     },
     {
@@ -472,6 +591,8 @@ export const completeBooking = async (bookingId, ownerId) => {
     throw new Error("Rental period has not ended yet");
   }
 
+  const now = new Date();
+
   const result = await collection.updateOne(
     {
       _id: bookingObjectId,
@@ -482,8 +603,8 @@ export const completeBooking = async (bookingId, ownerId) => {
     {
       $set: {
         status: "completed",
-        completedAt: new Date(),
-        updatedAt: new Date(),
+        completedAt: now,
+        updatedAt: now,
       },
     }
   );
