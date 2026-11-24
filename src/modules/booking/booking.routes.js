@@ -20,7 +20,7 @@ import {
 const router = express.Router();
 
 // ============================================
-// CUSTOMER BOOKING ROUTES
+// CUSTOMER ROUTES
 // ============================================
 
 // Create booking
@@ -31,7 +31,7 @@ router.post(
   createBookingController
 );
 
-// Get logged-in customer's bookings
+// Get customer's bookings
 router.get(
   "/my-bookings",
   verifyToken,
@@ -39,32 +39,9 @@ router.get(
   getMyBookingsController
 );
 
-// Request deadline extension
-router.post(
-  "/:id/extension-request",
-  verifyToken,
-  authorizeRole("customer"),
-  requestBookingExtensionController
-);
-
-// Get a specific customer booking
-router.get(
-  "/:id",
-  verifyToken,
-  authorizeRole("customer"),
-  getBookingByIdController
-);
-
-// Cancel booking
-router.patch(
-  "/:id/cancel",
-  verifyToken,
-  authorizeRole("customer"),
-  cancelBookingController
-);
-
 // ============================================
-// OWNER / ADMIN BOOKING ROUTES
+// OWNER / ADMIN ROUTES
+// IMPORTANT: Keep these before GET /:id
 // ============================================
 
 // Get received bookings
@@ -83,7 +60,7 @@ router.patch(
   updateOwnerBookingStatusController
 );
 
-// Owner or Admin directly extends review deadline
+// Owner or Admin extends review deadline
 router.patch(
   "/:id/extend-deadline",
   verifyToken,
@@ -91,7 +68,7 @@ router.patch(
   extendBookingDeadlineController
 );
 
-// Owner or Admin reviews customer extension request
+// Owner or Admin reviews extension request
 router.patch(
   "/:id/extension-requests/:requestId/review",
   verifyToken,
@@ -105,6 +82,39 @@ router.patch(
   verifyToken,
   authorizeRole("owner"),
   completeBookingController
+);
+
+// ============================================
+// CUSTOMER BOOKING ACTIONS
+// ============================================
+
+// Customer requests deadline extension
+router.post(
+  "/:id/extension-request",
+  verifyToken,
+  authorizeRole("customer"),
+  requestBookingExtensionController
+);
+
+// Customer cancels booking
+router.patch(
+  "/:id/cancel",
+  verifyToken,
+  authorizeRole("customer"),
+  cancelBookingController
+);
+
+// ============================================
+// DYNAMIC CUSTOMER ROUTE
+// MUST BE LAST AMONG GET ROUTES
+// ============================================
+
+// Get a specific customer booking
+router.get(
+  "/:id",
+  verifyToken,
+  authorizeRole("customer"),
+  getBookingByIdController
 );
 
 export default router;
