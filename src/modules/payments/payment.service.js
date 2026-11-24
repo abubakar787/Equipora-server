@@ -151,8 +151,10 @@ export const createCheckoutSession = async (
     mode: "payment",
 
     // Updated for the current Stripe API version.
-    allowed_payment_method_types: ["card"],
-
+ 
+managed_payments: {
+  enabled: false,
+},
     line_items: [
       {
         price_data: {
