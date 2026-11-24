@@ -618,3 +618,444 @@ export const completeBooking = async (bookingId, ownerId) => {
     ownerId,
   });
 };
+
+// ============================================
+// BOOKING EXTENSION HELPERS
+// ============================================
+
+const ALLOWED_EXTENSION_HOURS = [12, 24, 48];
+
+const getReviewDeadline = (booking) =>
+  booking.ownerReviewExpiresAt || booking.expiresAt;
+
+const validateExtensionHours = (hours) => {
+  if (!ALLOWED_EXTENSION_HOURS.includes(Number(hours))) {
+    throw new Error(
+      "Extension must be 12, 24, or 48 hours"
+    );
+  }
+
+  return Number(hours);
+};
+
+// Recheck equipment availability before reopening
+// an expired booking reservation.
+const ensureBookingAvailability = async (booking) => {
+  const bookings = getBookingCollection();
+  const equipmentCollection = getEquipmentCollection();
+  const now = new Date();
+
+  const equipment = await equipmentCollection.findOne({
+    _id: booking.equipmentId,
+    status: "approved",
+    isAvailable: true,
+    isDeleted: { $ne: true },
+  });
+
+  if (!equipment) {
+    throw new Error(
+      "Equipment is no longer available"
+    );
+  }
+
+  const overlapping = await bookings.aggregate([
+    {
+      $match: {
+        _id: { $ne: booking._id },
+        equipmentId: booking.equipmentId,
+        startAt: { $lt: booking.endAt },
+        endAt: { $gt: booking.startAt },
+
+        $or: [
+          {
+            status: { $in: ["confirmed", "active"] },
+          },
+          {
+            status: "pending_payment",
+            $or: [
+              { ownerReviewExpiresAt: { $gt: now } },
+              {
+                ownerReviewExpiresAt: { $exists: false },
+                expiresAt: { $gt: now },
+              },
+            ],
+          },
+          {
+            status: "approved_for_payment",
+            $or: [
+              { paymentExpiresAt: { $gt: now } },
+              {
+                paymentExpiresAt: { $exists: false },
+                expiresAt: { $gt: now },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        bookedQuantity: { $sum: "$quantity" },
+      },
+    },
+  ]).toArray();
+
+  const bookedQuantity =
+    overlapping[0]?.bookedQuantity ?? 0;
+
+  const availableQuantity =
+    equipment.quantity - bookedQuantity;
+
+  if (booking.quantity > availableQuantity) {
+    throw new Error(
+      `Cannot extend this booking. Only ${Math.max(
+        availableQuantity,
+        0
+      )} unit(s) are currently available.`
+    );
+  }
+};
+
+// ============================================
+// CUSTOMER: REQUEST BOOKING EXTENSION
+// ============================================
+
+export const requestBookingExtension = async (
+  bookingId,
+  customerId,
+  requestedHours,
+  reason
+) => {
+  if (!ObjectId.isValid(bookingId)) {
+    throw new Error("Invalid booking ID");
+  }
+
+  const hours = validateExtensionHours(requestedHours);
+  const now = new Date();
+
+  const bookings = getBookingCollection();
+  const bookingObjectId = new ObjectId(bookingId);
+
+  const booking = await bookings.findOne({
+    _id: bookingObjectId,
+    customerId,
+    status: "pending_payment",
+    paymentStatus: "unpaid",
+  });
+
+  if (!booking) {
+    throw new Error(
+      "Pending booking not found or unavailable"
+    );
+  }
+
+  const deadline = getReviewDeadline(booking);
+
+  if (!deadline || new Date(deadline) > now) {
+    throw new Error(
+      "You can request an extension after the review deadline expires"
+    );
+  }
+
+  const pendingRequest = (
+    booking.extensionRequests || []
+  ).some((request) => request.status === "pending");
+
+  if (pendingRequest) {
+    throw new Error(
+      "You already have a pending extension request"
+    );
+  }
+
+  const request = {
+    _id: new ObjectId(),
+    requestedBy: customerId,
+    requestedHours: hours,
+    reason: reason.trim(),
+    status: "pending",
+    reviewedBy: null,
+    reviewedAt: null,
+    reviewNote: "",
+    createdAt: now,
+  };
+
+  const result = await bookings.updateOne(
+    {
+      _id: bookingObjectId,
+      customerId,
+      status: "pending_payment",
+      paymentStatus: "unpaid",
+
+      // Prevent duplicate pending requests
+      extensionRequests: {
+        $not: {
+          $elemMatch: {
+            status: "pending",
+          },
+        },
+      },
+    },
+    {
+      $push: {
+        extensionRequests: request,
+      },
+      $set: {
+        updatedAt: now,
+      },
+    }
+  );
+
+  if (result.modifiedCount === 0) {
+    throw new Error(
+      "Extension request could not be submitted. Please refresh and try again."
+    );
+  }
+
+  return bookings.findOne({
+    _id: bookingObjectId,
+    customerId,
+  });
+};
+
+// ============================================
+// OWNER / ADMIN: DIRECTLY EXTEND DEADLINE
+// ============================================
+
+export const extendBookingDeadline = async (
+  bookingId,
+  user,
+  requestedHours,
+  reason
+) => {
+  if (!ObjectId.isValid(bookingId)) {
+    throw new Error("Invalid booking ID");
+  }
+
+  const hours = validateExtensionHours(requestedHours);
+  const now = new Date();
+
+  const bookings = getBookingCollection();
+  const bookingObjectId = new ObjectId(bookingId);
+
+  const query = {
+    _id: bookingObjectId,
+    status: "pending_payment",
+    paymentStatus: "unpaid",
+  };
+
+  if (user.role === "owner") {
+    query.ownerId = user.id;
+  } else if (user.role !== "admin") {
+    throw new Error("You are not allowed to extend this booking");
+  }
+
+  const booking = await bookings.findOne(query);
+
+  if (!booking) {
+    throw new Error(
+      "Pending booking not found or access denied"
+    );
+  }
+
+  const oldDeadline = getReviewDeadline(booking);
+
+  if (!oldDeadline) {
+    throw new Error("Booking review deadline is missing");
+  }
+
+  // Recheck availability if the previous deadline has expired
+  if (new Date(oldDeadline) <= now) {
+    await ensureBookingAvailability(booking);
+  }
+
+  const baseTime = Math.max(
+    new Date(oldDeadline).getTime(),
+    now.getTime()
+  );
+
+  const newDeadline = new Date(
+    baseTime + hours * 60 * 60 * 1000
+  );
+
+  const result = await bookings.updateOne(
+    {
+      _id: bookingObjectId,
+      status: "pending_payment",
+      paymentStatus: "unpaid",
+      ...(user.role === "owner"
+        ? { ownerId: user.id }
+        : {}),
+      ownerReviewExpiresAt: booking.ownerReviewExpiresAt,
+    },
+    {
+      $set: {
+        ownerReviewExpiresAt: newDeadline,
+        expiresAt: newDeadline,
+        updatedAt: now,
+      },
+      $inc: {
+        extensionCount: 1,
+      },
+      $push: {
+        extensionHistory: {
+          extendedBy: user.id,
+          extendedByRole: user.role,
+          previousDeadline: new Date(oldDeadline),
+          newDeadline,
+          hours,
+          reason: reason.trim(),
+          createdAt: now,
+        },
+      },
+    }
+  );
+
+  if (result.modifiedCount === 0) {
+    throw new Error(
+      "Deadline could not be extended. The booking may have changed. Refresh and try again."
+    );
+  }
+
+  return bookings.findOne({
+    _id: bookingObjectId,
+  });
+};
+
+// ============================================
+// OWNER / ADMIN: REVIEW CUSTOMER EXTENSION
+// ============================================
+
+export const reviewBookingExtension = async (
+  bookingId,
+  requestId,
+  user,
+  action,
+  reviewNote = ""
+) => {
+  if (
+    !ObjectId.isValid(bookingId) ||
+    !ObjectId.isValid(requestId)
+  ) {
+    throw new Error("Invalid booking or request ID");
+  }
+
+  if (!["approve", "reject"].includes(action)) {
+    throw new Error("Action must be approve or reject");
+  }
+
+  const bookings = getBookingCollection();
+  const bookingObjectId = new ObjectId(bookingId);
+  const requestObjectId = new ObjectId(requestId);
+  const now = new Date();
+
+  const query = {
+    _id: bookingObjectId,
+    status: "pending_payment",
+    paymentStatus: "unpaid",
+    extensionRequests: {
+      $elemMatch: {
+        _id: requestObjectId,
+        status: "pending",
+      },
+    },
+  };
+
+  if (user.role === "owner") {
+    query.ownerId = user.id;
+  } else if (user.role !== "admin") {
+    throw new Error(
+      "You are not allowed to review this extension"
+    );
+  }
+
+  const booking = await bookings.findOne(query);
+
+  if (!booking) {
+    throw new Error(
+      "Pending extension request not found or access denied"
+    );
+  }
+
+  const request = booking.extensionRequests.find(
+    (item) =>
+      item._id.toString() === requestObjectId.toString() &&
+      item.status === "pending"
+  );
+
+  if (!request) {
+    throw new Error("Extension request is no longer pending");
+  }
+
+  let newDeadline = null;
+
+  if (action === "approve") {
+    const oldDeadline = getReviewDeadline(booking);
+
+    if (!oldDeadline) {
+      throw new Error("Booking review deadline is missing");
+    }
+
+    // Recheck stock before reopening an expired reservation
+    if (new Date(oldDeadline) <= now) {
+      await ensureBookingAvailability(booking);
+    }
+
+    const baseTime = Math.max(
+      new Date(oldDeadline).getTime(),
+      now.getTime()
+    );
+
+    newDeadline = new Date(
+      baseTime + request.requestedHours * 60 * 60 * 1000
+    );
+  }
+
+  const update = {
+    $set: {
+      "extensionRequests.$.status": action === "approve"
+        ? "approved"
+        : "rejected",
+      "extensionRequests.$.reviewedBy": user.id,
+      "extensionRequests.$.reviewedAt": now,
+      "extensionRequests.$.reviewNote": reviewNote.trim(),
+      updatedAt: now,
+    },
+  };
+
+  if (action === "approve") {
+    update.$set.ownerReviewExpiresAt = newDeadline;
+    update.$set.expiresAt = newDeadline;
+
+    update.$inc = {
+      extensionCount: 1,
+    };
+
+    update.$push = {
+      extensionHistory: {
+        extendedBy: user.id,
+        extendedByRole: user.role,
+        previousDeadline: new Date(
+          getReviewDeadline(booking)
+        ),
+        newDeadline,
+        hours: request.requestedHours,
+        reason: request.reason,
+        requestId: requestObjectId,
+        createdAt: now,
+      },
+    };
+  }
+
+  const result = await bookings.updateOne(query, update);
+
+  if (result.modifiedCount === 0) {
+    throw new Error(
+      "Extension request could not be reviewed. Refresh and try again."
+    );
+  }
+
+  return bookings.findOne({
+    _id: bookingObjectId,
+  });
+};

@@ -1,18 +1,9 @@
 
-// ============================================
-// 1. IMPORTS
-// ============================================
-
 import express from "express";
 
-// Authentication and authorization middleware
 import { verifyToken } from "../../middlewares/verifyToken.js";
 import { authorizeRole } from "../../middlewares/authorizeRole.js";
-import {
-   completeBookingController,
-} from "./booking.controller.js";
 
-// Booking controllers
 import {
   createBookingController,
   getMyBookingsController,
@@ -20,21 +11,19 @@ import {
   cancelBookingController,
   getOwnerBookingsController,
   updateOwnerBookingStatusController,
+  completeBookingController,
+  requestBookingExtensionController,
+  extendBookingDeadlineController,
+  reviewBookingExtensionController,
 } from "./booking.controller.js";
-
-
-// ============================================
-// 2. ROUTER INITIALIZATION
-// ============================================
 
 const router = express.Router();
 
-
 // ============================================
-// 3. CUSTOMER BOOKING ROUTES
+// CUSTOMER BOOKING ROUTES
 // ============================================
 
-// Create a new equipment booking
+// Create booking
 router.post(
   "/",
   verifyToken,
@@ -42,7 +31,7 @@ router.post(
   createBookingController
 );
 
-// Get all bookings of the logged-in customer
+// Get logged-in customer's bookings
 router.get(
   "/my-bookings",
   verifyToken,
@@ -50,33 +39,15 @@ router.get(
   getMyBookingsController
 );
 
-// ============================================
-// 4. OWNER BOOKING ROUTES
-// ============================================
-
-// Get booking requests for the logged-in owner
-// Supports pagination and status filtering
-router.get(
-  "/owner-bookings",
+// Request deadline extension
+router.post(
+  "/:id/extension-request",
   verifyToken,
-  authorizeRole("owner", "admin"),
-  getOwnerBookingsController
+  authorizeRole("customer"),
+  requestBookingExtensionController
 );
 
-// Owner approves or rejects a booking request
-router.patch(
-  "/:id/owner-review",
-  verifyToken,
-  authorizeRole("owner"),
-  updateOwnerBookingStatusController
-);
-
-
-// ============================================
-// 5. CUSTOMER BOOKING DETAILS & CANCELLATION
-// ============================================
-
-// Get details of a specific customer booking
+// Get a specific customer booking
 router.get(
   "/:id",
   verifyToken,
@@ -84,7 +55,7 @@ router.get(
   getBookingByIdController
 );
 
-// Cancel an unpaid pending booking
+// Cancel booking
 router.patch(
   "/:id/cancel",
   verifyToken,
@@ -92,11 +63,43 @@ router.patch(
   cancelBookingController
 );
 
+// ============================================
+// OWNER / ADMIN BOOKING ROUTES
+// ============================================
 
-// ============================================
-// 6. EXPORT ROUTER
-// ============================================
-// Owner: Complete a rental booking
+// Get received bookings
+router.get(
+  "/owner-bookings",
+  verifyToken,
+  authorizeRole("owner", "admin"),
+  getOwnerBookingsController
+);
+
+// Owner approves or rejects booking
+router.patch(
+  "/:id/owner-review",
+  verifyToken,
+  authorizeRole("owner"),
+  updateOwnerBookingStatusController
+);
+
+// Owner or Admin directly extends review deadline
+router.patch(
+  "/:id/extend-deadline",
+  verifyToken,
+  authorizeRole("owner", "admin"),
+  extendBookingDeadlineController
+);
+
+// Owner or Admin reviews customer extension request
+router.patch(
+  "/:id/extension-requests/:requestId/review",
+  verifyToken,
+  authorizeRole("owner", "admin"),
+  reviewBookingExtensionController
+);
+
+// Owner completes rental
 router.patch(
   "/:id/complete",
   verifyToken,
