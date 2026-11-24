@@ -5,6 +5,8 @@ import { ObjectId } from "mongodb";
 import { env } from "../config/env.js";
 import { getDB } from "../config/db.js";
 
+const ALLOWED_ROLES = ["customer", "owner", "admin"];
+
 // Better Auth public signing keys
 const JWKS = createRemoteJWKSet(
   new URL(`${env.betterAuthUrl}/api/auth/jwks`)
@@ -71,10 +73,18 @@ export const verifyToken = async (req, res, next) => {
       });
     }
 
-    // 6. Validate current database role
-    const allowedRoles = ["customer", "owner", "admin"];
+    // 6. Normalize and validate database role
+    const userRole = String(currentUser.role || "")
+      .trim()
+      .toLowerCase();
 
-    if (!allowedRoles.includes(currentUser.role)) {
+    if (!ALLOWED_ROLES.includes(userRole)) {
+      console.error("Invalid database user role:", {
+        userId,
+        originalRole: currentUser.role,
+        normalizedRole: userRole,
+      });
+
       return res.status(403).json({
         success: false,
         message: "Invalid user role",
@@ -85,8 +95,15 @@ export const verifyToken = async (req, res, next) => {
     req.user = {
       id: currentUser.id || currentUser._id.toString(),
       email: currentUser.email,
-      role: currentUser.role,
+      role: userRole,
     };
+
+    // Debug authentication
+    console.log("AUTHENTICATED USER:", {
+      id: req.user.id,
+      email: req.user.email,
+      role: req.user.role,
+    });
 
     // 8. Continue to next middleware
     return next();
